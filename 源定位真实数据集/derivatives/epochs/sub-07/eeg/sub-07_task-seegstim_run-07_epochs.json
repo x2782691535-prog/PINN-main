@@ -1,0 +1,10 @@
+{
+    "Description": "Stimulation of channel Q16-17 0.3mA",
+    "Sources": "/sub-07/eeg/sub-07_task-seegstim_run-07_eeg.npy",
+    "BaselineCorrection": true,
+    "BaselineCorrectionMethod": "mean subtraction",
+    "BaselinePeriod": [
+        -0.3,
+        -0.05
+    ]
+}

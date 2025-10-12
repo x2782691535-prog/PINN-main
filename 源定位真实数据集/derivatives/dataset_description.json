@@ -1,0 +1,7 @@
+{
+    "Name": "Simultaneous human intracerebral stimulation and HD-EEG: ground-truth for source localization methods",
+    "BIDSVersion": "1.2.0",
+    "Authors": ["Ezequiel Mikulan", "Simone Russo", "Sara Parmigiani", "Simone Sarasso", "Flavia Maria Zauli", "Annalisa Rubino", "Pietro Avanzini", "Anna Cattani", "Alberto Sorrentino", "Steve GIbbs", "Francesco Cardinale", "Ivana Sartori", "Lino Nobili", "Marcello Massimini", "Andrea Pigorini"],
+    "Funding": ["This project/research has received funding from the European Union’s Horizon 2020 Framework Programme for Research and Innovation under the Specific Grant Agreement No.720270 and No. 785907 (Human Brain Project SGA1 & SGA2)"],
+    "License": "CC-BY-NC-SA 4.0"
+}

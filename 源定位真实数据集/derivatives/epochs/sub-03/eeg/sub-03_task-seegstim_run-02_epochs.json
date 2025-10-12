@@ -1,0 +1,10 @@
+{
+    "Description": "Stimulation of channel H'1-2 0.5mA",
+    "Sources": "/sub-03/eeg/sub-03_task-seegstim_run-02_eeg.npy",
+    "BaselineCorrection": true,
+    "BaselineCorrectionMethod": "mean subtraction",
+    "BaselinePeriod": [
+        -0.3,
+        -0.05
+    ]
+}

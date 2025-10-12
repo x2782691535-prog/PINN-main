@@ -1,0 +1,10 @@
+{
+    "Description": "Stimulation of channel Z'13-14 0.3mA",
+    "Sources": "/sub-06/eeg/sub-06_task-seegstim_run-07_eeg.npy",
+    "BaselineCorrection": true,
+    "BaselineCorrectionMethod": "mean subtraction",
+    "BaselinePeriod": [
+        -0.3,
+        -0.05
+    ]
+}

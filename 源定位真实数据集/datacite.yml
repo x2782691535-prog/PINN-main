@@ -1,0 +1,114 @@
+# Metadata for DOI registration according to DataCite Metadata Schema 4.1.
+# For detailed schema description see https://doi.org/10.5438/0014
+
+## Required fields
+
+# The main researchers involved. Include digital identifier (e.g., ORCID)
+# if possible, including the prefix to indicate its type.
+authors:
+  -
+    firstname: "Ezequiel"
+    lastname: "Mikulan"
+    affiliation: "Department of Biomedical and Clinical Sciences “L. Sacco”, Università degli Studi di Milano, Milan, Italy."
+    id: "ORCID:0000-0001-7259-6120"
+  -
+    firstname: "Simone"
+    lastname: "Russo"
+    affiliation: "Department of Biomedical and Clinical Sciences “L. Sacco”, Università degli Studi di Milano, Milan, Italy."
+    id: "ORCID:0000-0002-7762-1900"
+  -
+    firstname: "Sara"
+    lastname: "Parmigiani"
+    affiliation: "Department of Biomedical and Clinical Sciences “L. Sacco”, Università degli Studi di Milano, Milan, Italy."
+  -
+    firstname: "Simone"
+    lastname: "Sarasso"
+    affiliation: "Department of Biomedical and Clinical Sciences “L. Sacco”, Università degli Studi di Milano, Milan, Italy."
+    id: "ORCID:0000-0001-9984-4710"
+  -
+    firstname: "Flavia Maria"
+    lastname: "Zauli"
+    affiliation: "Department of Biomedical and Clinical Sciences “L. Sacco”, Università degli Studi di Milano, Milan, Italy."
+    id: "ORCID:0000-0002-7328-6068"
+  -
+    firstname: "Annalisa"
+    lastname: "Rubino"
+    affiliation: "Centre of Epilepsy Surgery “C. Munari”, Department of Neuroscience, Niguarda Hospital, Milan, Italy."
+  -
+    firstname: "Pietro"
+    lastname: "Avanzini"
+    affiliation: "Institute of Neuroscience, National Research Council of Italy, Parma, Italy."
+    id: "ORCID:0000-0001-9371-451X"
+  -
+    firstname: "Anna"
+    lastname: "Cattani"
+    affiliation: "Department of Biomedical and Clinical Sciences “L. Sacco”, Università degli Studi di Milano, Milan, Italy."
+  -
+    firstname: "Alberto"
+    lastname: "Sorrentino"
+    affiliation: "Department of Mathematics, University of Genoa, Genoa, Italy."
+    id: "ORCID:0000-0003-3457-6780"
+  -
+    firstname: "Steve"
+    lastname: "Gibbs"
+    affiliation: "Centre of Epilepsy Surgery “C. Munari”, Department of Neuroscience, Niguarda Hospital, Milan, Italy; Center for Advanced Research in Sleep Medicine, Hôpital du Sacré-Cœur de Montréal, Department of Neurosciences, University of Montreal, Montreal, Quebec, Canada."
+    id: "ORCID:0000-0002-8489-4907"
+  -
+    firstname: "Francesco"
+    lastname: "Cardinale"
+    affiliation: "Centre of Epilepsy Surgery “C. Munari”, Department of Neuroscience, Niguarda Hospital, Milan, Italy."
+    id: "ORCID:0000-0002-5141-9202"
+  -
+    firstname: "Ivana"
+    lastname: "Sartori"
+    affiliation: "Centre of Epilepsy Surgery “C. Munari”, Department of Neuroscience, Niguarda Hospital, Milan, Italy."
+    id: "ORCID:0000-0001-5659-0730"
+  -
+    firstname: "Lino"
+    lastname: "Nobili"
+    affiliation: "Child Neuropsychiatry Unit, IRCCS ‘G. Gaslini’ Institute, Genoa, Italy; DINOGMI, University of Genoa, Genoa, Italy."
+    id: "ORCID:0000-0001-9317-5405"
+  -
+    firstname: "Marcello"
+    lastname: "Massimini"
+    affiliation: "Department of Biomedical and Clinical Sciences “L. Sacco”, Università degli Studi di Milano, Milan, Italy."
+    id: "ORCID:0000-0003-2271-957X"
+  -
+    firstname: "Andrea"
+    lastname: "Pigorini"
+    affiliation: "Department of Biomedical and Clinical Sciences “L. Sacco”, Università degli Studi di Milano, Milan, Italy."
+    id: "ORCID:0000-0002-1856-3413"
+
+# A title to describe the published resource.
+title: "Localize-MI"
+
+# Additional information about the resource, e.g., a brief abstract.
+description: |
+  Simultaneous human intracerebral stimulation and HD-EEG – ground-truth for source localization methods
+
+# Lit of keywords the resource should be associated with.
+# Give as many keywords as possible, to make the resource findable.
+keywords:
+  - Neuroscience
+  - Electrophysiology
+  - EEG
+  - Intracerebral stimulation
+  - Source modelling
+
+# License information for this resource. Please provide the license name and/or a link to the license.
+# Please add also a corresponding LICENSE file to the repository.
+license:
+  name: "Creative Commons CC BY-NC-SA 4.0"
+  url: "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+
+
+## Optional Fields
+
+# Funding information for this resource.
+# Separate funder name and grant number by comma.
+funding:
+  - "European Union’s Horizon 2020 Framework Programme for Research and Innovation under the Specific Grant Agreements No. 720270 and No. 785907 (Human Brain Project SGA1 and SGA2; to M.M. and P.A.)"
+  - "Italian Ministry of Health, Targeted Research Grant No. RF-2010-2319316"
+
+# Resource type. Default is Dataset, other possible values are Software, DataPaper, Image, Text.
+resourcetype: Dataset

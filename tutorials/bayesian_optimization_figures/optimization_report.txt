@@ -1,0 +1,33 @@
+
+    ===== Bayesian Hyperparameter Optimization Report =====
+
+    Optimization Configuration:
+    - Total iterations: 50
+    - Acquisition function: ei
+    - Initial random points: 5
+
+    Best Results:
+    - Best MLE (Mean Localization Error): 2.896276 mm
+    - Optimal parameter configuration:
+          learning_rate: 0.000800
+      batch_size: 28
+      dropout: 0.132346
+      patience: 19
+
+    Parameter Importance Ranking:
+        1. learning_rate: 0.5012
+    2. dropout: 0.4202
+    3. patience: 0.2119
+    4. batch_size: 0.0643
+
+    Optimization Statistics:
+    - Best MLE: 2.896276 mm
+    - Worst MLE: 7.771136 mm
+    - Mean MLE: 5.348587 mm
+    - MLE standard deviation: 1.158291 mm
+
+    Convergence Analysis:
+    - First 5 iterations mean MLE: 5.742644 mm
+    - Last 5 iterations mean MLE: 5.410184 mm
+    - Improvement: 5.79%
+    

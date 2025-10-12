@@ -1,0 +1,20 @@
+{
+  "total_subjects": 7,
+  "successful_subjects": 1,
+  "overall_avg_mle": 48.73785641677847,
+  "overall_std_mle": 16.46182546662332,
+  "overall_median_mle": 52.24843296057674,
+  "best_mle": 27.05157630332884,
+  "worst_mle": 66.91355998642982,
+  "total_runs": 3,
+  "subject_summaries": [
+    {
+      "subject": "sub-01",
+      "n_runs": 3,
+      "avg_mle": 48.73785641677847,
+      "std_mle": 16.46182546662332,
+      "min_mle": 27.05157630332884,
+      "max_mle": 66.91355998642982
+    }
+  ]
+}

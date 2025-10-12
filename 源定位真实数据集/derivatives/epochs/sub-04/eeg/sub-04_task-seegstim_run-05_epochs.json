@@ -1,0 +1,10 @@
+{
+    "Description": "Stimulation of channel P1-2 0.1mA",
+    "Sources": "/sub-04/eeg/sub-04_task-seegstim_run-05_eeg.npy",
+    "BaselineCorrection": true,
+    "BaselineCorrectionMethod": "mean subtraction",
+    "BaselinePeriod": [
+        -0.3,
+        -0.05
+    ]
+}

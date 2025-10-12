@@ -1,0 +1,134 @@
+{
+  "subject": "sub-02",
+  "average_mle_mm": 60.58640358778888,
+  "std_mle_mm": 0.0,
+  "n_successful_runs": 6,
+  "detailed_results": [
+    {
+      "run": 1,
+      "mle_mm": 60.58640358778888,
+      "predicted_position": [
+        -0.05386156402528286,
+        -0.023663057945668697,
+        0.09473981708288193
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel X'1-2 1mA",
+        "Sources": "/sub-02/eeg/sub-02_task-seegstim_run-01_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      },
+      "auc_roc": 0.5,
+      "auc_pr": 0.5
+    },
+    {
+      "run": 2,
+      "mle_mm": 60.58640358778888,
+      "predicted_position": [
+        -0.05386156402528286,
+        -0.023663057945668697,
+        0.09473981708288193
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel X'1-2 0.5mA",
+        "Sources": "/sub-02/eeg/sub-02_task-seegstim_run-02_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      },
+      "auc_roc": 0.5,
+      "auc_pr": 0.5
+    },
+    {
+      "run": 3,
+      "mle_mm": 60.58640358778888,
+      "predicted_position": [
+        -0.05386156402528286,
+        -0.023663057945668697,
+        0.09473981708288193
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel X'4-5 1mA",
+        "Sources": "/sub-02/eeg/sub-02_task-seegstim_run-03_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      },
+      "auc_roc": 0.5,
+      "auc_pr": 0.5
+    },
+    {
+      "run": 4,
+      "mle_mm": 60.58640358778888,
+      "predicted_position": [
+        -0.05386156402528286,
+        -0.023663057945668697,
+        0.09473981708288193
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel X'4-5 0.5mA",
+        "Sources": "/sub-02/eeg/sub-02_task-seegstim_run-04_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      },
+      "auc_roc": 0.5,
+      "auc_pr": 0.5
+    },
+    {
+      "run": 5,
+      "mle_mm": 60.58640358778888,
+      "predicted_position": [
+        -0.05386156402528286,
+        -0.023663057945668697,
+        0.09473981708288193
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel X'8-9 1mA",
+        "Sources": "/sub-02/eeg/sub-02_task-seegstim_run-05_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      },
+      "auc_roc": 0.5,
+      "auc_pr": 0.5
+    },
+    {
+      "run": 6,
+      "mle_mm": 60.58640358778888,
+      "predicted_position": [
+        -0.05386156402528286,
+        -0.023663057945668697,
+        0.09473981708288193
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel X'8-9 0.5mA",
+        "Sources": "/sub-02/eeg/sub-02_task-seegstim_run-06_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      },
+      "auc_roc": 0.5,
+      "auc_pr": 0.5
+    }
+  ]
+}

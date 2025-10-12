@@ -1,0 +1,6 @@
+{
+    "iEEGCoordinateUnits": "m",
+    "iEEGCoordinateSystem": "ICBM 2009a Nonlinear Symmetric",
+    "iEEGCoordinateProcessingReference": "Narizzano, M., Arnulfo, G., Ricci, S., Toselli, B., Tisdall, M., Canessa, A., Fato, M.M., Cardinale, F., 2017. SEEG assistant: a 3DSlicer extension to support epilepsy surgery. BMC Bioinformatics 18. https://doi.org/10.1186/s12859-017-1545-8 /// Avants, B.B., Tustison, N.J., Song, G., Cook, P.A., Klein, A., Gee, J.C., 2011. A reproducible evaluation of ANTs similarity metric performance in brain image registration. NeuroImage 54, 2033\u20132044. https://doi.org/10.1016/j.neuroimage.2010.09.025",
+    "iEEGCoordinateProcessingDescription": "Skull stripping and SyN Registration (ANTs) to ICBM152"
+}

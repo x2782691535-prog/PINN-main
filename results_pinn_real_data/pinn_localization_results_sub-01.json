@@ -1,0 +1,71 @@
+{
+  "subject": "sub-01",
+  "average_mle_mm": 52.079330907933375,
+  "std_mle_mm": 35.47451363516708,
+  "n_successful_runs": 3,
+  "detailed_results": [
+    {
+      "run": 1,
+      "mle_mm": 2.7762619275827736,
+      "predicted_position": [
+        0.03293921728618443,
+        -0.004932068288326263,
+        0.041678458626847714
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel K13-14 1mA",
+        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-01_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      },
+      "auc_roc": 0.5860374366025227,
+      "auc_pr": 0.10152226277809458
+    },
+    {
+      "run": 2,
+      "mle_mm": 68.6954924561367,
+      "predicted_position": [
+        -0.044372872216627,
+        -0.0014941748231649399,
+        0.04624291154323146
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel K13-14 5mA",
+        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-02_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      },
+      "auc_roc": 0.48378610589732035,
+      "auc_pr": 0.06709544042884096
+    },
+    {
+      "run": 3,
+      "mle_mm": 84.76623834008063,
+      "predicted_position": [
+        -0.008857488399371505,
+        -0.08669957891106606,
+        0.015243795874994248
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel N2-3 1mA",
+        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-03_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      },
+      "auc_roc": 0.5582996639719767,
+      "auc_pr": 0.09004636732459848
+    }
+  ]
+}

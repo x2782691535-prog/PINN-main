@@ -1,0 +1,7 @@
+{
+    "iEEGCoordinateUnits": "m",
+    "iEEGCoordinateSystem": "Other",
+    "iEEGCoordinateSystemDescription": "Native MRI space",
+    "iEEGCoordinateProcessingReference": "Narizzano, M., Arnulfo, G., Ricci, S., Toselli, B., Tisdall, M., Canessa, A., Fato, M.M., Cardinale, F., 2017. SEEG assistant: a 3DSlicer extension to support epilepsy surgery. BMC Bioinformatics 18. https://doi.org/10.1186/s12859-017-1545-8",
+    "IntendedFor": "/sub-04/anat/sub-04_T1w.nii"
+}
