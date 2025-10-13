@@ -781,4 +781,4 @@ class RealDataPINNLocalizer:
 
 if __name__ == "__main__":
     localizer = RealDataPINNLocalizer(DATASET_PATH)
-    localizer.run_analysis("sub-02")
+    localizer.run_analysis("sub-01")

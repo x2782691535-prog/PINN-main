@@ -1,3 +1,0 @@
-﻿Model,CV_Train_Acc(%),CV_Val_Acc(%),Test_Acc(%),Test_F1,Test_Kappa,Avg_Time(min),N_Subjects
-PINN-only,51.19,51.51,54.02±11.38,0.3920±0.1660,0.0805±0.2276,3.6,9
-CNN-only,93.90,87.38,81.99±12.17,0.8164±0.1251,0.6398±0.2433,5.3,9
