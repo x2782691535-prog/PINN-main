@@ -89,6 +89,8 @@ class RealDataPINNLocalizer:
         self.forward_models = {}
         self.electrode_positions = {}
         self.pinn_model = None
+        self.model_type = 'pinn'  # 默认使用PINN模型，可选: fc, lstm, cnn
+        self.source_time_course = 'pulse'  # 默认使用脉冲波形，可选: sine, random
         
     def load_forward_model(self, subject):
         """加载前向模型"""
@@ -333,7 +335,7 @@ class RealDataPINNLocalizer:
                 number_of_sources=1,        # 颅内电刺激通常是单源
                 extents=(5, 15),           # 适中的源范围
                 beta_source=(1, 1.5),      # 适中的beta参数
-                source_time_course='pulse'   # 正弦波时间过程
+                source_time_course=self.source_time_course   # 根据参数选择时间过程
             )
             
             print(f"✅ 模拟设置（仿BCIIV2a.py）: {real_data_settings}")
@@ -369,33 +371,59 @@ class RealDataPINNLocalizer:
                     pickle.dump(simulation, f)
                 print(f'✅ 训练模拟数据已保存到: {SIM_TRAIN_PATH}')
             
-            # 5. 初始化PINN模型（使用固定方向的前向模型）
-            print("🔧 初始化PINN模型...")
-            # 关键修复：使用RMS重缩放避免_solve_p_wrap中的索引错误，同时保持正确的输出格式
-            self.pinn_model = Net(fwd_fixed, use_pinn=True, physics_weight=0.4, rescale_sources='rms')
-            
-            # 添加缺失的dropout属性
-            if not hasattr(self.pinn_model, 'dropout'):
-                self.pinn_model.dropout = 0.2  # 设置默认dropout率
-            
-            # 构建PINN模型
-            self.pinn_model._build_pinn_model()
+            # 5. 初始化模型（根据model_type参数）
+            print(f"🔧 初始化{self.model_type.upper()}模型...")
+
+            # 根据model_type参数选择模型
+            if self.model_type.lower() == 'pinn':
+                # 修复：不传递model_type='pinn'，使用默认的'auto'，避免触发特殊的PINN编译逻辑
+                self.pinn_model = Net(fwd_fixed, use_pinn=True,
+                                     physics_weight=0.4, rescale_sources='rms')
+                if not hasattr(self.pinn_model, 'dropout'):
+                    self.pinn_model.dropout = 0.2
+                self.pinn_model._build_pinn_model()
+
+            elif self.model_type.lower() == 'fc':
+                # FC模型：关闭物理约束
+                self.pinn_model = Net(fwd_fixed, model_type='fc', use_pinn=False,
+                                     n_dense_layers=3, n_dense_units=200, rescale_sources='rms')
+                if not hasattr(self.pinn_model, 'dropout'):
+                    self.pinn_model.dropout = 0.2
+                self.pinn_model._build_fc_model()
+
+            elif self.model_type.lower() == 'lstm':
+                # LSTM模型：关闭物理约束
+                self.pinn_model = Net(fwd_fixed, model_type='lstm', use_pinn=False,
+                                     n_lstm_layers=2, n_lstm_units=32, n_dense_units=200, rescale_sources='rms')
+                if not hasattr(self.pinn_model, 'dropout'):
+                    self.pinn_model.dropout = 0.2
+                self.pinn_model._build_temporal_model()
+
+            elif self.model_type.lower() == 'cnn':
+                # CNN模型：关闭物理约束
+                self.pinn_model = Net(fwd_fixed, model_type='cnn', use_pinn=False,
+                                     n_filters=64, n_lstm_units=32, rescale_sources='rms')
+                if not hasattr(self.pinn_model, 'dropout'):
+                    self.pinn_model.dropout = 0.2
+                self.pinn_model._build_cnn_model()
+            else:
+                raise ValueError(f"不支持的模型类型: {self.model_type}")
             
             # 保存固定方向的前向模型供后续使用
             self.fwd_fixed = fwd_fixed
             
-            print("✅ PINN模型设置完成（仿BCIIV2a.py方式）")
+            print(f"✅ {self.model_type.upper()}模型设置完成（仿BCIIV2a.py方式）")
             return simulation
             
         except Exception as e:
-            print(f"❌ PINN模型设置失败: {e}")
+            print(f"❌ {self.model_type.upper()}模型设置失败: {e}")
             print(f"错误详情: {str(e)}")
             return None
     
     def train_pinn_model(self, simulation, epochs=100, batch_size=32, learning_rate=0.001, patience=7):
-        """训练PINN模型"""
+        """训练神经网络模型"""
         try:
-            print(f"🚀 开始训练PINN模型...")
+            print(f"🚀 开始训练{self.model_type.upper()}模型...")
             print(f"   - 训练样本数: {simulation.n_samples}")
             print(f"   - 训练轮数: {epochs}")
             print(f"   - 批次大小: {batch_size}")
@@ -410,17 +438,17 @@ class RealDataPINNLocalizer:
                 patience=patience
             )
             
-            print("✅ PINN模型训练完成")
+            print(f"✅ {self.model_type.upper()}模型训练完成")
             return True
             
         except Exception as e:
-            print(f"❌ PINN模型训练失败: {e}")
+            print(f"❌ {self.model_type.upper()}模型训练失败: {e}")
             return False
     
     def perform_source_localization(self, eeg_data, fwd):
-        """执行源定位（保留原始PINN方法）"""
+        """执行源定位（保留原始神经网络方法）"""
         try:
-            print("🎯 执行PINN源定位...")
+            print(f"🎯 执行{self.model_type.upper()}源定位...")
             # 预处理EEG数据
             if eeg_data.ndim == 3:  # (trials, channels, time)
                 # 仅做试验平均，去掉时间平均！
@@ -438,7 +466,7 @@ class RealDataPINNLocalizer:
                 eeg_data = eeg_data.reshape(1, -1)
             print(f"   - 进Evoked前shape: {eeg_data.shape}")
             
-            # 使用PINN进行源重建 (TensorFlow后端)
+            # 使用神经网络进行源重建 (TensorFlow后端)
             # 创建MNE Evoked对象，因为esinet.predict期望MNE对象
             # 关键修复：使用前向模型中的通道名，而不是自己生成的通道名
             print(f"   - 前向模型通道数: {len(self.fwd_fixed.ch_names)}")
@@ -465,7 +493,7 @@ class RealDataPINNLocalizer:
             print(f"   - Evoked对象创建成功")
             print(f"   - Evoked数据形状: {evoked.data.shape}")
             print(f"   - Evoked通道数: {len(evoked.ch_names)}")
-            print(f"   - PINN模型类型: {type(self.pinn_model)}")
+            print(f"   - {self.model_type.upper()}模型类型: {type(self.pinn_model)}")
             print(f"   - 前向模型通道名匹配检查: {evoked.ch_names[:5]} vs {self.fwd_fixed.ch_names[:5]}")
             
             # 尝试预测并捕获详细错误
@@ -520,11 +548,11 @@ class RealDataPINNLocalizer:
                 
                 raise e
             
-            print("✅ PINN源定位完成")
+            print(f"✅ {self.model_type.upper()}源定位完成")
             return source_estimate
             
         except Exception as e:
-            print(f"❌ PINN源定位失败: {e}")
+            print(f"❌ {self.model_type.upper()}源定位失败: {e}")
             return None
     
     def calculate_localization_error(self, predicted_sources, true_positions, source_positions):
@@ -672,8 +700,8 @@ class RealDataPINNLocalizer:
         fwd = self.load_forward_model(subject)
         if fwd is None:
             return None
-        # 2. 设置PINN模型
-        print("🧠 使用PINN方法（仿BCIIV2a.py模拟数据生成）")
+        # 2. 设置模型
+        print(f"🧠 使用{self.model_type.upper()}方法（仿BCIIV2a.py模拟数据生成）")
         simulation = self.setup_pinn_model_like_bciiv2a(fwd, subject, n_samples=100)
         if simulation is None:
             return None
@@ -734,7 +762,7 @@ class RealDataPINNLocalizer:
             max_auc = aucs[max_auc_idx]
             max_auc_run = results[max_auc_idx]['run']
 
-            print(f"\n📈 {subject} 测试集评估结果 (PINN, all runs):")
+            print(f"\n📈 {subject} 测试集评估结果 ({self.model_type.upper()}, all runs):")
             print(f"   - Testing samples (runs): {len(results)}")
             print(f"   - MLE: {avg_mle:.2f} ± {std_mle:.2f} mm")
             print(f"   - AUC: {avg_auc:.4f}")
@@ -754,7 +782,7 @@ class RealDataPINNLocalizer:
         try:
             results_dir = Path("results_pinn_real_data")
             results_dir.mkdir(exist_ok=True)
-            results_file = results_dir / f"pinn_localization_results_{results[0]['run']}.json"
+            results_file = results_dir / f"{self.model_type}_localization_results_{results[0]['run']}.json"
             save_data = {
                 'testing_samples': len(results),
                 'average_mle_mm': float(avg_mle),
@@ -780,5 +808,20 @@ class RealDataPINNLocalizer:
 
 
 if __name__ == "__main__":
+    # ============ 配置参数（直接修改这里） ============
+    SUBJECT = 'sub-01'              # 被试ID: sub-01 到 sub-07
+    MODEL_TYPE = 'fc'             # 模型类型: 'pinn', 'fc', 'lstm', 'cnn'
+    SOURCE_TIME_COURSE = 'pulse'    # 源时间过程: 'pulse'(脉冲), 'sine'(正弦), 'random'(随机)
+    # ==============================================
+
     localizer = RealDataPINNLocalizer(DATASET_PATH)
-    localizer.run_analysis("sub-01")
+    localizer.model_type = MODEL_TYPE
+    localizer.source_time_course = SOURCE_TIME_COURSE
+
+    print(f"\n{'='*60}")
+    print(f"  模型类型: {MODEL_TYPE.upper()}")
+    print(f"  源时间过程: {SOURCE_TIME_COURSE}")
+    print(f"  被试: {SUBJECT}")
+    print(f"{'='*60}\n")
+
+    localizer.run_analysis(SUBJECT)

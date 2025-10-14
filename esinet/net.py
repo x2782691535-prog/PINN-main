@@ -1340,47 +1340,41 @@ class Net:
         n_sources = tf.shape(source_activations)[1]
         n_timepoints = tf.shape(source_activations)[2] if len(source_activations.shape) > 2 else 1
         
-        # 从前向模型获取真实的源点坐标
-        if hasattr(self.fwd, 'source_rr'):
-            source_coords = tf.constant(self.fwd['source_rr'], dtype=tf.float32)  # (n_sources, 3)
-        else:
-            # 通过leadfield矩阵的结构推导源点位置
-            n_dipoles_per_vertex = 3  # 通常每个顶点有3个方向的偶极子
-            n_vertices = n_sources // n_dipoles_per_vertex
-            
-            # 创建基于大脑解剖结构的真实源点分布
-            import numpy as np
-            theta = tf.linspace(0.0, tf.constant(np.pi, dtype=tf.float32), int(tf.sqrt(tf.cast(n_vertices, tf.float32))))
-            phi = tf.linspace(0.0, tf.constant(2.0 * np.pi, dtype=tf.float32), int(tf.sqrt(tf.cast(n_vertices, tf.float32))))
-            
-            theta_grid, phi_grid = tf.meshgrid(theta, phi, indexing='ij')
-            theta_flat = tf.reshape(theta_grid, [-1])[:n_vertices]
-            phi_flat = tf.reshape(phi_grid, [-1])[:n_vertices]
-            
-            # 球坐标转换为笛卡尔坐标（大脑半径约8cm）
-            radius = 0.08  # 8cm in meters
-            x_coords = radius * tf.sin(theta_flat) * tf.cos(phi_flat)
-            y_coords = radius * tf.sin(theta_flat) * tf.sin(phi_flat)
-            z_coords = radius * tf.cos(theta_flat)
-            
-            # 为每个顶点创建3个方向的偶极子
-            source_coords_list = []
-            for i in range(n_vertices):
-                for j in range(n_dipoles_per_vertex):
-                    source_coords_list.append([x_coords[i], y_coords[i], z_coords[i]])
-            
-            # 确保在GPU上处理
-            with tf.device('/GPU:0'):
-                # 将n_sources转换为Python整数以避免GPU-CPU切换
-                if isinstance(n_sources, tf.Tensor):
-                    # 在eager模式下直接获取值
-                    n_sources_int = int(tf.get_static_value(n_sources) or tf.shape(source_activations)[1])
-                else:
-                    n_sources_int = int(n_sources)
+        # 从前向模型/leadfield推导每个dipole的空间坐标（图模式安全，避免越界）
+        try:
+            # 优先使用MNE Forward中的顶点坐标
+            src_lh = self.fwd['src'][0]
+            pos = src_lh['rr'][src_lh['vertno']]
+            if len(self.fwd['src']) > 1:
+                src_rh = self.fwd['src'][1]
+                pos = np.vstack([pos, src_rh['rr'][src_rh['vertno']]])  # (n_vertices, 3)
+            n_vertices_np = pos.shape[0]
+            n_dipoles_np = self.leadfield.shape[1]
+            # 估计每顶点的偶极子数（1=固定方向，3=自由方向）
+            n_dipoles_per_vertex_np = max(1, int(round(n_dipoles_np / max(1, n_vertices_np))))
+            # 重复顶点坐标以匹配偶极子数量
+            pos_repeated = np.repeat(pos, repeats=n_dipoles_per_vertex_np, axis=0)  # (>= n_dipoles, 3)
+            source_coords_all = tf.constant(pos_repeated, dtype=tf.float32)
+        except Exception:
+            # 回退到单位球面均匀分布（保证不越界）
+            n_dipoles_np = int(self.leadfield.shape[1])
+            # 生成足够多的点，再裁剪到n_dipoles
+            n_points = max(1, n_dipoles_np)
+            idx = tf.range(n_points, dtype=tf.float32)
+            theta = 2.0 * np.pi * (idx / tf.cast(n_points, tf.float32))
+            phi = np.pi * (idx / tf.cast(n_points, tf.float32))
+            radius = 0.08
+            x = radius * tf.sin(phi) * tf.cos(theta)
+            y = radius * tf.sin(phi) * tf.sin(theta)
+            z = radius * tf.cos(phi)
+            source_coords_all = tf.stack([x, y, z], axis=1)
 
-                # 确保不超出列表长度
-                n_sources_int = min(n_sources_int, len(source_coords_list))
-                source_coords = tf.constant(source_coords_list[:n_sources_int], dtype=tf.float32)
+        # 保证与当前张量n_sources一致长度：tile后裁剪，避免越界
+        n_sources_tf = tf.shape(source_activations)[1]
+        total_coords = tf.shape(source_coords_all)[0]
+        repeats = tf.cast(tf.math.ceil(tf.cast(n_sources_tf, tf.float32) / tf.cast(total_coords, tf.float32)), tf.int32)
+        coords_tiled = tf.tile(source_coords_all, [repeats, 1])
+        source_coords = coords_tiled[:n_sources_tf]
         
         x_coords = source_coords[:, 0]
         y_coords = source_coords[:, 1]
@@ -1393,7 +1387,11 @@ class Net:
             if n_timepoints > 1:
                 activations_t = source_activations[:, :, t]  # (batch_size, n_sources)
             else:
-                activations_t = tf.squeeze(source_activations, axis=-1) if len(source_activations.shape) > 2 else source_activations
+                # 修复：当只有一个时间点时，直接使用前两个维度
+                if len(source_activations.shape) > 2:
+                    activations_t = source_activations[:, :, 0]  # (batch_size, n_sources)
+                else:
+                    activations_t = source_activations  # 已经是 (batch_size, n_sources)
             
             batch_losses = []
             

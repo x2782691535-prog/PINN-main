@@ -1,0 +1,35 @@
+{
+  "experiment_info": {
+    "dataset_path": "E:\\pycharm\\PINN\\PINN-main\\\u6e90\u5b9a\u4f4d\u771f\u5b9e\u6570\u636e\u96c6",
+    "subjects": [
+      "sub-01",
+      "sub-02",
+      "sub-03",
+      "sub-04",
+      "sub-05",
+      "sub-06",
+      "sub-07"
+    ],
+    "methods": [
+      "MNE",
+      "eLORETA"
+    ],
+    "timestamp": "2025-10-14 16:10:27"
+  },
+  "summary_statistics": {
+    "MNE": {
+      "mean_localization_error_mm": 31.420712731054305,
+      "std_localization_error_mm": 16.805168576032365,
+      "min_localization_error_mm": 17.0332161967535,
+      "max_localization_error_mm": 58.232759450931326,
+      "n_subjects": 6
+    },
+    "eLORETA": {
+      "mean_localization_error_mm": 23.961668592688934,
+      "std_localization_error_mm": 12.666312732105103,
+      "min_localization_error_mm": 8.328479455598245,
+      "max_localization_error_mm": 40.30253954833145,
+      "n_subjects": 7
+    }
+  }
+}
