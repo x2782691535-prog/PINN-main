@@ -26,6 +26,7 @@ from contextlib import redirect_stdout
 import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings('ignore')
+from collections import deque
 
 # 设置matplotlib字体为微软黑体，解决中文显示问题
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']
@@ -40,7 +41,7 @@ class PINNSourceLocalization(nn.Module):
     物理信息神经网络(PINN)源定位模块
     适配真实数据集，不依赖真实源位置标签
     """
-    def __init__(self, input_dim, n_sources, leadfield, device='cuda'):
+    def __init__(self, input_dim, n_sources, leadfield, source_positions, device='cuda'):
         super(PINNSourceLocalization, self).__init__()
         self.input_dim = input_dim
         self.n_sources = n_sources
@@ -48,6 +49,50 @@ class PINNSourceLocalization(nn.Module):
         
         # 引线场矩阵 (n_channels, n_sources)
         self.leadfield = leadfield.to(device)
+        
+        # 源空间坐标 (n_sources, 3)，用于划分左右半球
+        self.source_positions = source_positions.to(device)
+        
+        # 计算左右半球源点索引 (基于x坐标，x>0为左半球，x<0为右半球)
+        self.left_hemisphere_idx = (source_positions[:, 0] > 0).nonzero(as_tuple=True)[0].to(device)
+        self.right_hemisphere_idx = (source_positions[:, 0] < 0).nonzero(as_tuple=True)[0].to(device)
+        
+        # ==================================================================
+        # 基于运动皮层人体映射图（Motor Homunculus）的精确功能区划分
+        # ==================================================================
+        
+        # 1. 手部运动区（左右对侧控制）
+        # 位置：中央沟附近，中等z坐标（0.04-0.07），左右偏移
+        hand_motor_mask = (source_positions[:, 1] > -0.02) & (source_positions[:, 1] < 0.05) & \
+                          (source_positions[:, 2] > 0.04) & (source_positions[:, 2] < 0.07)
+        self.left_hand_motor_idx = ((source_positions[:, 0] > 0.02) & hand_motor_mask).nonzero(as_tuple=True)[0].to(device)
+        self.right_hand_motor_idx = ((source_positions[:, 0] < -0.02) & hand_motor_mask).nonzero(as_tuple=True)[0].to(device)
+        
+        # 2. 脚部运动区（顶部旁中央小叶，双侧对称激活）
+        # 位置：顶部中线，z坐标最高（>0.065），y坐标稍靠后
+        foot_motor_mask = (source_positions[:, 2] > 0.065) & \
+                          (source_positions[:, 1] > -0.03) & (source_positions[:, 1] < 0.03) & \
+                          (torch.abs(source_positions[:, 0]) < 0.025)  # 中线±2.5cm
+        self.foot_motor_idx = foot_motor_mask.nonzero(as_tuple=True)[0].to(device)
+        
+        # 3. 舌头运动区（下部运动皮层，双侧激活）
+        # 位置：z坐标较低（0.03-0.05），y坐标中等，可能双侧
+        tongue_motor_mask = (source_positions[:, 2] > 0.03) & (source_positions[:, 2] < 0.05) & \
+                            (source_positions[:, 1] > -0.01) & (source_positions[:, 1] < 0.04) & \
+                            (torch.abs(source_positions[:, 0]) < 0.04)  # 中线±4cm
+        self.tongue_motor_idx = tongue_motor_mask.nonzero(as_tuple=True)[0].to(device)
+        
+        # 4. 辅助特征：整体左右半球（用于对比）
+        self.left_hemisphere_strong_idx = (source_positions[:, 0] > 0.03).nonzero(as_tuple=True)[0].to(device)
+        self.right_hemisphere_strong_idx = (source_positions[:, 0] < -0.03).nonzero(as_tuple=True)[0].to(device)
+        
+        print(f"\n=== 基于Motor Homunculus的源空间功能区划分 ===")
+        print(f"左半球 {len(self.left_hemisphere_idx)} 个源点, 右半球 {len(self.right_hemisphere_idx)} 个源点")
+        print(f"左手运动区: {len(self.left_hand_motor_idx)} 个源点 (对应右手想象)")
+        print(f"右手运动区: {len(self.right_hand_motor_idx)} 个源点 (对应左手想象)")
+        print(f"脚部运动区: {len(self.foot_motor_idx)} 个源点 (顶部中线)")
+        print(f"舌头运动区: {len(self.tongue_motor_idx)} 个源点 (下部中线)")
+        print(f"==========================================\n")
         
         # 深度特征提取网络（类似BCIIV2a.py中的TimeDistributed Dense层）
         self.feature_extractor = nn.Sequential(
@@ -185,7 +230,7 @@ class PINNSourceLocalization(nn.Module):
             x: 输入EEG数据 (batch_size, n_channels, n_timepoints)
             target_eeg: 目标EEG信号用于重建损失计算 (batch_size, n_channels)
         Returns:
-            dict: 包含源激活和损失的字典
+            dict: 包含源激活、半球特征和损失的字典
         """
         batch_size, n_channels, n_timepoints = x.shape
         
@@ -198,6 +243,82 @@ class PINNSourceLocalization(nn.Module):
         # 源定位映射
         source_activations = self.source_mapping(deep_features)
         
+        # ==================================================================
+        # 四分类专用源空间特征提取（基于Motor Homunculus）
+        # ==================================================================
+        
+        # 1. 左手想象特征：右侧手部运动区激活强
+        right_hand_motor_activation = torch.mean(torch.abs(source_activations[:, self.right_hand_motor_idx]), dim=1, keepdim=True)
+        right_hand_motor_max = torch.max(torch.abs(source_activations[:, self.right_hand_motor_idx]), dim=1, keepdim=True)[0]
+        
+        # 2. 右手想象特征：左侧手部运动区激活强
+        left_hand_motor_activation = torch.mean(torch.abs(source_activations[:, self.left_hand_motor_idx]), dim=1, keepdim=True)
+        left_hand_motor_max = torch.max(torch.abs(source_activations[:, self.left_hand_motor_idx]), dim=1, keepdim=True)[0]
+        
+        # 3. 脚部想象特征：顶部中线区域激活
+        foot_motor_activation = torch.mean(torch.abs(source_activations[:, self.foot_motor_idx]), dim=1, keepdim=True)
+        foot_motor_max = torch.max(torch.abs(source_activations[:, self.foot_motor_idx]), dim=1, keepdim=True)[0] if len(self.foot_motor_idx) > 0 else torch.zeros_like(foot_motor_activation)
+        
+        # 4. 舌头想象特征：下部运动区激活
+        tongue_motor_activation = torch.mean(torch.abs(source_activations[:, self.tongue_motor_idx]), dim=1, keepdim=True)
+        tongue_motor_max = torch.max(torch.abs(source_activations[:, self.tongue_motor_idx]), dim=1, keepdim=True)[0] if len(self.tongue_motor_idx) > 0 else torch.zeros_like(tongue_motor_activation)
+        
+        # 5. 对侧控制指数（左右手判别的核心特征）
+        # 左手倾向 = 右侧手部区 - 左侧手部区
+        left_hand_laterality = right_hand_motor_activation - left_hand_motor_activation
+        # 右手倾向 = 左侧手部区 - 右侧手部区
+        right_hand_laterality = left_hand_motor_activation - right_hand_motor_activation
+        
+        # 6. 脚-手判别特征（脚部激活 vs 手部激活）
+        hand_activation_total = left_hand_motor_activation + right_hand_motor_activation
+        foot_vs_hand = foot_motor_activation / (hand_activation_total + 1e-8)
+        
+        # 7. 舌头-手判别特征（舌头激活 vs 手部激活）
+        tongue_vs_hand = tongue_motor_activation / (hand_activation_total + 1e-8)
+        
+        # 8. 脚-舌判别特征
+        foot_vs_tongue = foot_motor_activation / (tongue_motor_activation + 1e-8)
+        
+        # 9. 双侧对称性（脚和舌头的特征）
+        left_hemisphere_strong = torch.mean(torch.abs(source_activations[:, self.left_hemisphere_strong_idx]), dim=1, keepdim=True)
+        right_hemisphere_strong = torch.mean(torch.abs(source_activations[:, self.right_hemisphere_strong_idx]), dim=1, keepdim=True)
+        bilateral_symmetry = torch.min(left_hemisphere_strong, right_hemisphere_strong) / (torch.max(left_hemisphere_strong, right_hemisphere_strong) + 1e-8)
+        
+        # 10. 垂直位置特征（脚在顶部，舌头在下部）
+        # 使用最大激活值的比值来判断激活位置
+        foot_dominance = foot_motor_max / (foot_motor_max + tongue_motor_max + hand_activation_total + 1e-8)
+        tongue_dominance = tongue_motor_max / (foot_motor_max + tongue_motor_max + hand_activation_total + 1e-8)
+        
+        # 整合为20维四分类判别特征向量
+        hemisphere_features = torch.cat([
+            # 手部运动特征 (8维)
+            left_hand_motor_activation,      # [1] 左手运动区平均激活
+            left_hand_motor_max,              # [2] 左手运动区峰值激活
+            right_hand_motor_activation,      # [3] 右手运动区平均激活
+            right_hand_motor_max,             # [4] 右手运动区峰值激活
+            left_hand_laterality,             # [5] 左手倾向指数（核心）
+            right_hand_laterality,            # [6] 右手倾向指数（核心）
+            hand_activation_total,            # [7] 手部总激活
+            
+            # 脚部运动特征 (4维)
+            foot_motor_activation,            # [8] 脚部区平均激活
+            foot_motor_max,                   # [9] 脚部区峰值激活
+            foot_vs_hand,                     # [10] 脚-手判别（核心）
+            foot_dominance,                   # [11] 脚部主导度
+            
+            # 舌头运动特征 (4维)
+            tongue_motor_activation,          # [12] 舌头区平均激活
+            tongue_motor_max,                 # [13] 舌头区峰值激活
+            tongue_vs_hand,                   # [14] 舌-手判别（核心）
+            tongue_dominance,                 # [15] 舌头主导度
+            
+            # 判别特征 (4维)
+            foot_vs_tongue,                   # [16] 脚-舌判别
+            bilateral_symmetry,               # [17] 双侧对称性
+            left_hemisphere_strong,           # [18] 强左半球激活
+            right_hemisphere_strong           # [19] 强右半球激活
+        ], dim=1)
+        
         # 计算物理约束损失
         physics_loss = self.physics_loss_calculator(source_activations, target_eeg)
         
@@ -205,7 +326,12 @@ class PINNSourceLocalization(nn.Module):
             'source_activations': source_activations,
             'deep_features': deep_features,
             'physics_loss': physics_loss,
-            'spatial_features': spatial_features
+            'spatial_features': spatial_features,
+            'hemisphere_features': hemisphere_features,
+            'left_hand_motor_activation': left_hand_motor_activation,
+            'right_hand_motor_activation': right_hand_motor_activation,
+            'foot_motor_activation': foot_motor_activation,
+            'tongue_motor_activation': tongue_motor_activation
         }
 
 
@@ -261,19 +387,235 @@ class CNNTemporalExtractor(nn.Module):
 
 
 # =================================================================================
-# PINN+CNN混合模型
+# ATCNet注意力机制模块（方案H）
 # =================================================================================
-class PINN_CNN_BCI(nn.Module):
+class SqueezeExcitation(nn.Module):
     """
-    PINN+CNN混合模型用于BCI-IV-2a左右手分类
-    - PINN分支：提取空域特征
-    - CNN分支：提取时域特征
+    挤压激励注意力机制 (Squeeze-and-Excitation)
+    """
+    def __init__(self, channels, reduction=16):
+        super(SqueezeExcitation, self).__init__()
+        self.squeeze = nn.AdaptiveAvgPool1d(1)
+        self.excitation = nn.Sequential(
+            nn.Linear(channels, channels // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channels // reduction, channels, bias=False),
+            nn.Sigmoid()
+        )
+    
+    def forward(self, x):
+        """
+        Args:
+            x: (batch, channels, time)
+        Returns:
+            attended: (batch, channels, time)
+        """
+        batch, channels, _ = x.size()
+        # Squeeze: 全局平均池化
+        y = self.squeeze(x).view(batch, channels)
+        # Excitation: 学习通道权重
+        y = self.excitation(y).view(batch, channels, 1)
+        # Scale: 应用权重
+        return x * y.expand_as(x)
+
+
+class MultiHeadSelfAttention(nn.Module):
+    """
+    多头自注意力机制 (Multi-Head Self-Attention)
+    """
+    def __init__(self, embed_dim, num_heads=8, dropout=0.1):
+        super(MultiHeadSelfAttention, self).__init__()
+        self.attention = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
+        self.norm = nn.LayerNorm(embed_dim)
+        self.dropout = nn.Dropout(dropout)
+        
+    def forward(self, x):
+        """
+        Args:
+            x: (batch, time, channels)
+        Returns:
+            attended: (batch, time, channels)
+        """
+        # 自注意力
+        attn_output, _ = self.attention(x, x, x)
+        # 残差连接 + 层归一化
+        x = self.norm(x + self.dropout(attn_output))
+        return x
+
+
+# =================================================================================
+# ATCNet时间卷积块（方案H）
+# =================================================================================
+class TemporalConvBlock(nn.Module):
+    """
+    ATCNet的时间卷积块 - 多尺度时间特征提取
+    """
+    def __init__(self, in_channels, out_channels, kernel_size, dilation, dropout=0.2):
+        super(TemporalConvBlock, self).__init__()
+        padding = (kernel_size - 1) * dilation // 2
+        
+        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size, 
+                               padding=padding, dilation=dilation)
+        self.bn1 = nn.BatchNorm1d(out_channels)
+        self.relu1 = nn.ELU()
+        self.dropout1 = nn.Dropout(dropout)
+        
+        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size,
+                               padding=padding, dilation=dilation)
+        self.bn2 = nn.BatchNorm1d(out_channels)
+        self.relu2 = nn.ELU()
+        self.dropout2 = nn.Dropout(dropout)
+        
+        # 残差连接
+        self.downsample = nn.Conv1d(in_channels, out_channels, 1) if in_channels != out_channels else None
+        self.relu = nn.ELU()
+        
+    def forward(self, x):
+        """
+        Args:
+            x: (batch, channels, time)
+        Returns:
+            out: (batch, channels, time)
+        """
+        residual = x
+        
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu1(out)
+        out = self.dropout1(out)
+        
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu2(out)
+        out = self.dropout2(out)
+        
+        if self.downsample:
+            residual = self.downsample(residual)
+        
+        out = self.relu(out + residual)
+        return out
+
+
+# =================================================================================
+# ATCNet核心架构（方案H）
+# =================================================================================
+class ATCNet(nn.Module):
+    """
+    Attention Temporal Convolutional Network for EEG
+    基于论文: "Physics-Informed Attention Temporal Convolutional Network 
+              for EEG-Based Motor Imagery Classification"
+    """
+    def __init__(self, in_channels=22, seq_length=1000, num_classes=4, 
+                 F1=16, D=2, F2=32, dropout=0.3):
+        super(ATCNet, self).__init__()
+        
+        # 阶段1: 时间卷积 - 提取时域特征
+        self.temporal_conv = nn.Sequential(
+            nn.Conv2d(1, F1, (1, 64), padding=(0, 32), bias=False),
+            nn.BatchNorm2d(F1)
+        )
+        
+        # 阶段2: 深度可分离卷积 - 提取空间特征
+        self.spatial_conv = nn.Sequential(
+            nn.Conv2d(F1, F1 * D, (in_channels, 1), groups=F1, bias=False),
+            nn.BatchNorm2d(F1 * D),
+            nn.ELU(),
+            nn.AvgPool2d((1, 4)),
+            nn.Dropout(dropout)
+        )
+        
+        # 阶段3: 可分离卷积
+        self.separable_conv = nn.Sequential(
+            nn.Conv2d(F1 * D, F2, (1, 16), padding=(0, 8), bias=False),
+            nn.BatchNorm2d(F2),
+            nn.ELU(),
+            nn.AvgPool2d((1, 8)),
+            nn.Dropout(dropout)
+        )
+        
+        # 计算卷积后的时间维度
+        temp_size = seq_length // 4 // 8  # 两次池化：/4, /8 = 31 (for seq_length=1000)
+        
+        # 阶段4: 挤压激励注意力
+        self.se_block = SqueezeExcitation(F2, reduction=8)
+        
+        # 阶段5: 多头自注意力（在通道维度F2=32上做注意力，F2能被4整除）
+        # 输入格式：(batch, time, F2)，其中F2=32是embed_dim
+        self.mhsa = MultiHeadSelfAttention(embed_dim=F2, num_heads=4, dropout=dropout)
+        
+        # 阶段7: 时间卷积网络（多尺度）
+        self.tcn_blocks = nn.ModuleList([
+            TemporalConvBlock(F2, F2, kernel_size=3, dilation=1, dropout=dropout),
+            TemporalConvBlock(F2, F2, kernel_size=3, dilation=2, dropout=dropout),
+            TemporalConvBlock(F2, F2, kernel_size=3, dilation=4, dropout=dropout),
+        ])
+        
+        # 全局平均池化
+        self.gap = nn.AdaptiveAvgPool1d(1)
+        
+        # 输出维度
+        self.output_dim = F2
+        
+    def forward(self, x):
+        """
+        Args:
+            x: (batch, channels, time)
+        Returns:
+            features: (batch, output_dim)
+        """
+        # 添加通道维度: (batch, 1, channels, time)
+        x = x.unsqueeze(1)
+        
+        # 时间卷积
+        x = self.temporal_conv(x)
+        
+        # 空间卷积
+        x = self.spatial_conv(x)
+        
+        # 可分离卷积
+        x = self.separable_conv(x)
+        
+        # 移除空间维度: (batch, F2, 1, time) -> (batch, F2, time)
+        x = x.squeeze(2)
+        
+        # SE注意力
+        x = self.se_block(x)
+        
+        # 多头自注意力：在通道维度F2上建模时序依赖
+        # 输入：(batch, F2, time) -> 转置为 (batch, time, F2)
+        x_for_attn = x.permute(0, 2, 1)  # (batch, time=31, F2=32)
+        
+        # 多头自注意力（embed_dim=F2=32，能被num_heads=4整除）
+        x_attn = self.mhsa(x_for_attn)  # (batch, time=31, F2=32)
+        
+        # 转置回: (batch, time, F2) -> (batch, F2, time)
+        x = x_attn.permute(0, 2, 1)  # (batch, F2=32, time=31)
+        
+        # 多尺度时间卷积
+        for tcn_block in self.tcn_blocks:
+            x = tcn_block(x)
+        
+        # 全局平均池化
+        x = self.gap(x).squeeze(-1)  # (batch, F2)
+        
+        return x
+
+
+# =================================================================================
+# ATCNet+PINN融合模型（方案H）
+# =================================================================================
+class PINN_ATCNet_BCI(nn.Module):
+    """
+    ATCNet+PINN融合模型用于BCI-IV-2a四分类任务
+    - ATCNet分支：提取时空特征（时间卷积+空间卷积+注意力+TCN）
+    - PINN分支：提取物理约束的源定位特征
     - 特征融合：自适应融合两种特征
-    - 分类器：最终分类输出
+    - 分类器：最终分类输出（左手/右手/脚/舌头）
     """
     def __init__(self, leadfield, fwd_model, epochs_info, in_channels=22, seq_length=1000, 
-                 num_classes=2, dropout_rate=0.35, use_pinn=True, sfreq=250):
-        super(PINN_CNN_BCI, self).__init__()
+                 num_classes=4, dropout_rate=0.3, use_pinn=True, sfreq=250,
+                 init_physics_weight=0.05, init_hemisphere_weight=0.4):
+        super(PINN_ATCNet_BCI, self).__init__()
         
         self.in_channels = in_channels
         self.seq_length = seq_length
@@ -288,46 +630,159 @@ class PINN_CNN_BCI(nn.Module):
         self.fwd_model = fwd_model
         self.epochs_info = epochs_info
         
-        # CNN时域特征提取分支
-        self.cnn_extractor = CNNTemporalExtractor(
+        # 方案H核心：ATCNet时空特征提取器
+        self.atcnet = ATCNet(
             in_channels=in_channels,
             seq_length=seq_length,
-            dropout_rate=dropout_rate
+            num_classes=num_classes,
+            F1=16,   # 时间滤波器数量
+            D=2,     # 深度乘数
+            F2=32,   # 输出滤波器数量
+            dropout=dropout_rate
         ).to(device)
         
         # PINN空域特征提取分支
         if self.use_pinn:
             n_sources = leadfield.shape[1]
+            
+            # 从fwd_model提取源空间坐标
+            source_positions = self._extract_source_positions(fwd_model)
+            
             self.pinn_extractor = PINNSourceLocalization(
                 input_dim=in_channels,
                 n_sources=n_sources,
                 leadfield=leadfield,
+                source_positions=source_positions,
                 device=device
             ).to(device)
             
-            # 特征融合层
-            fusion_input_dim = self.cnn_extractor.output_dim + 512  # CNN特征 + PINN深度特征
+            # 特征融合层（方案H）：ATCNet(32) + PINN源激活简化(20) + Motor Homunculus(19)
+            # ATCNet: 32, PINN源激活: 20, Motor: 19 = 71维
+            fusion_input_dim = self.atcnet.output_dim + 20 + 19
+            
+            # 源激活简化降维层（大幅压缩避免过拟合）
+            self.source_activation_reducer = nn.Sequential(
+                nn.Linear(n_sources, 64),
+                nn.ELU(),
+                nn.Dropout(dropout_rate),
+                nn.Linear(64, 20),
+                nn.ELU()
+            ).to(device)
+            
+            # Motor Homunculus特征注意力
+            self.feature_attention = nn.Sequential(
+                nn.Linear(19, 19),
+                nn.Sigmoid()
+            ).to(device)
+            
+            # 四分类判别监督分支（轻量化）
+            self.hemisphere_supervisor = nn.Sequential(
+                nn.Linear(19, 16),
+                nn.ELU(),
+                nn.Dropout(dropout_rate * 0.6),
+                nn.Linear(16, num_classes)
+            ).to(device)
+            
+            # 自适应损失权重（降低物理损失权重）
+            self.physics_weight_param = nn.Parameter(torch.tensor(init_physics_weight, dtype=torch.float32))
+            self.hemisphere_weight_param = nn.Parameter(torch.tensor(init_hemisphere_weight, dtype=torch.float32))
         else:
-            fusion_input_dim = self.cnn_extractor.output_dim
+            # 不使用PINN时：仅ATCNet
+            fusion_input_dim = self.atcnet.output_dim
         
-        # 平衡的特征融合网络 - 防过拟合优化
+        # 轻量化特征融合网络（方案H：大幅简化，避免过拟合）
         self.feature_fusion = nn.Sequential(
-            nn.Linear(fusion_input_dim, 200),
-            nn.BatchNorm1d(200),
-            nn.LeakyReLU(0.1),
-            nn.Dropout(dropout_rate),
-            nn.Linear(200, 100),
-            nn.BatchNorm1d(100),
-            nn.LeakyReLU(0.1),
-            nn.Dropout(dropout_rate),
-            nn.Linear(100, 64),
+            nn.Linear(fusion_input_dim, 64),
             nn.BatchNorm1d(64),
-            nn.LeakyReLU(0.1),
+            nn.ELU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(64, 32),
+            nn.BatchNorm1d(32),
+            nn.ELU(),
             nn.Dropout(dropout_rate)
         ).to(device)
         
         # 分类器头
-        self.classifier = nn.Linear(64, num_classes).to(device)
+        self.classifier = nn.Linear(32, num_classes).to(device)
+    
+    def _extract_source_positions(self, fwd_model):
+        """从前向模型中提取源空间坐标"""
+        # 获取源空间坐标 (n_sources, 3)
+        src = fwd_model['src']
+        positions = []
+        
+        for src_hemi in src:
+            # 提取每个半球的源点坐标（单位：米）
+            rr = src_hemi['rr'][src_hemi['vertno']]
+            positions.append(rr)
+        
+        # 合并左右半球的坐标
+        all_positions = np.concatenate(positions, axis=0)
+        
+        # 转换为torch tensor
+        positions_tensor = torch.tensor(all_positions, dtype=torch.float32)
+        
+        return positions_tensor
+    
+    def compute_contrastive_loss(self, hemisphere_features, labels, margin=1.5):
+        """
+        计算对比学习损失（方案E改进2）
+        
+        核心思想：
+        - 左手样本应该：右手运动区激活高，左手运动区激活低
+        - 右手样本应该：左手运动区激活高，右手运动区激活低
+        - 脚部样本应该：脚部运动区激活高
+        - 舌头样本应该：舌头运动区激活高
+        
+        Args:
+            hemisphere_features: (batch_size, 19) 源空间特征
+            labels: (batch_size,) 类别标签 0=左手, 1=右手, 2=脚, 3=舌头
+            margin: 对比学习的间隔参数
+        """
+        # 提取关键特征（基于第245-319行的特征定义）
+        left_hand_motor = hemisphere_features[:, 0:1]   # [1] 左手运动区平均激活
+        right_hand_motor = hemisphere_features[:, 2:3]  # [3] 右手运动区平均激活
+        left_laterality = hemisphere_features[:, 4:5]   # [5] 左手倾向指数
+        right_laterality = hemisphere_features[:, 5:6]  # [6] 右手倾向指数
+        foot_activation = hemisphere_features[:, 7:8]   # [8] 脚部区平均激活
+        tongue_activation = hemisphere_features[:, 11:12] # [12] 舌头区平均激活
+        
+        contrastive_loss = torch.tensor(0.0, device=hemisphere_features.device)
+        
+        # 1. 左手vs右手对比（对侧控制原理）
+        left_hand_mask = (labels == 0).float().unsqueeze(1)  # 左手样本
+        right_hand_mask = (labels == 1).float().unsqueeze(1) # 右手样本
+        
+        if left_hand_mask.sum() > 0 and right_hand_mask.sum() > 0:
+            # 左手样本应该有正的左手倾向指数
+            left_hand_positive = torch.clamp(margin - left_laterality, min=0) * left_hand_mask
+            # 右手样本应该有正的右手倾向指数
+            right_hand_positive = torch.clamp(margin - right_laterality, min=0) * right_hand_mask
+            contrastive_loss += (left_hand_positive.sum() + right_hand_positive.sum()) / (left_hand_mask.sum() + right_hand_mask.sum())
+        
+        # 2. 脚部vs手部对比
+        foot_mask = (labels == 2).float().unsqueeze(1)
+        hand_mask = ((labels == 0) | (labels == 1)).float().unsqueeze(1)
+        
+        if foot_mask.sum() > 0 and hand_mask.sum() > 0:
+            # 脚部样本的脚部激活应该 > 手部样本的脚部激活
+            foot_avg = (foot_activation * foot_mask).sum() / (foot_mask.sum() + 1e-8)
+            hand_foot_avg = (foot_activation * hand_mask).sum() / (hand_mask.sum() + 1e-8)
+            foot_contrast = torch.clamp(margin - (foot_avg - hand_foot_avg), min=0)
+            contrastive_loss += foot_contrast
+        
+        # 3. 舌头vs其他对比
+        tongue_mask = (labels == 3).float().unsqueeze(1)
+        non_tongue_mask = (labels != 3).float().unsqueeze(1)
+        
+        if tongue_mask.sum() > 0 and non_tongue_mask.sum() > 0:
+            # 舌头样本的舌头激活应该 > 非舌头样本的舌头激活
+            tongue_avg = (tongue_activation * tongue_mask).sum() / (tongue_mask.sum() + 1e-8)
+            non_tongue_avg = (tongue_activation * non_tongue_mask).sum() / (non_tongue_mask.sum() + 1e-8)
+            tongue_contrast = torch.clamp(margin - (tongue_avg - non_tongue_avg), min=0)
+            contrastive_loss += tongue_contrast
+        
+        return contrastive_loss
         
     def forward(self, x):
         """
@@ -339,27 +794,39 @@ class PINN_CNN_BCI(nn.Module):
         """
         batch_size = x.shape[0]
         
-        # CNN时域特征提取
-        cnn_features = self.cnn_extractor(x)
+        # 方案H：ATCNet时空特征提取
+        atcnet_features = self.atcnet(x)  # (batch, 32)
         
         # PINN空域特征提取
         pinn_outputs = None
         physics_loss = torch.tensor(0.0, device=x.device)
         
         if self.use_pinn:
-            # 计算空间平均作为重建目标
+            # 计算空间平均作为重建目标（弱化物理约束）
             target_eeg = torch.mean(x, dim=2)  # (batch_size, n_channels)
             target_eeg = F.normalize(target_eeg, p=2, dim=1)
             
             # PINN前向传播
             pinn_outputs = self.pinn_extractor(x, target_eeg)
             physics_loss = pinn_outputs['physics_loss']
-            pinn_features = pinn_outputs['deep_features']
+            source_activations = pinn_outputs['source_activations']
+            hemisphere_features = pinn_outputs['hemisphere_features']
             
-            # 特征融合
-            combined_features = torch.cat([cnn_features, pinn_features], dim=1)
+            # 源激活降维（大幅压缩）
+            source_activations_reduced = self.source_activation_reducer(source_activations)  # (batch, 20)
+            
+            # Motor Homunculus特征注意力加权
+            attention_weights = self.feature_attention(hemisphere_features)
+            hemisphere_features_attended = hemisphere_features * attention_weights  # (batch, 19)
+            
+            # 方案H特征融合：ATCNet(32) + 源激活简化(20) + Motor特征(19) = 71维
+            combined_features = torch.cat([
+                atcnet_features,                  # ATCNet时空特征 (32)
+                source_activations_reduced,        # 源激活简化 (20)
+                hemisphere_features_attended       # Motor Homunculus特征 (19)
+            ], dim=1)
         else:
-            combined_features = cnn_features
+            combined_features = atcnet_features
         
         # 特征融合处理
         fused_features = self.feature_fusion(combined_features)
@@ -367,19 +834,30 @@ class PINN_CNN_BCI(nn.Module):
         # 分类预测
         logits = self.classifier(fused_features)
         
+        # 半球监督预测（基于半球特征直接分类）
+        hemisphere_logits = None
+        if self.use_pinn and hasattr(self, 'hemisphere_supervisor'):
+            hemisphere_logits = self.hemisphere_supervisor(hemisphere_features)
+        
         # 返回结果
         result = {
             'logits': logits,
-            'cnn_features': cnn_features,
+            'atcnet_features': atcnet_features,  # 方案H：ATCNet特征
             'fused_features': fused_features,
-            'physics_loss': physics_loss
+            'physics_loss': physics_loss,
+            'hemisphere_logits': hemisphere_logits
         }
         
         if pinn_outputs is not None:
             result.update({
                 'source_activations': pinn_outputs['source_activations'],
                 'pinn_features': pinn_outputs['deep_features'],
-                'spatial_features': pinn_outputs['spatial_features']
+                'spatial_features': pinn_outputs['spatial_features'],
+                'hemisphere_features': pinn_outputs['hemisphere_features'],
+                'left_hand_motor_activation': pinn_outputs['left_hand_motor_activation'],
+                'right_hand_motor_activation': pinn_outputs['right_hand_motor_activation'],
+                'foot_motor_activation': pinn_outputs['foot_motor_activation'],
+                'tongue_motor_activation': pinn_outputs['tongue_motor_activation']
             })
         
         return result
@@ -470,8 +948,8 @@ class BCI2aDataset(Dataset):
             # 验证数据集
             self.validate_dataset()
             
-            # 过滤数据，只保留左右手的数据（标签1和2）
-            self.filter_left_right_hand_data()
+            # 四分类任务：保留所有4个类别（左手、右手、脚、舌头）
+            print(f"四分类任务：保留所有类别数据")
             
             # 如果需要扩充数据集
             if self.repeat_factor > 1:
@@ -480,20 +958,6 @@ class BCI2aDataset(Dataset):
             print(f"总共加载了 {len(self.labels)} 个样本，数据形状: {self.data.shape}")
         else:
             raise ValueError("没有成功加载任何数据。请检查数据集路径和格式。")
-    
-    def filter_left_right_hand_data(self):
-        """过滤数据，只保留左右手运动想象的数据（标签1和2）"""
-        # 创建掩码，选择标签为1或2的样本
-        mask = np.logical_or(self.labels == 1, self.labels == 2)
-        
-        # 应用掩码，过滤数据和标签
-        self.data = self.data[mask]
-        self.labels = self.labels[mask]
-        
-        # 输出过滤后的数据分布
-        unique_labels, counts = np.unique(self.labels, return_counts=True)
-        print(f"过滤后标签分布: {dict(zip(unique_labels, counts))}")
-        print(f"只使用左手(标签1)和右手(标签2)的数据，共{len(self.labels)}个样本")
     
     def set_augmentation(self, enabled=True):
         """设置是否启用数据增强"""
@@ -546,80 +1010,46 @@ class BCI2aDataset(Dataset):
         print(f"扩充后总样本数：{len(self.expanded_indices)} 个")
     
     def apply_data_augmentation(self, data):
-        """应用增强的数据增强策略 - 防过拟合"""
-        # 1. 随机高斯噪声 (增强版)
-        if np.random.rand() < 0.8:
-            noise_level = np.random.uniform(0.005, 0.02)  # 增加噪声强度
+        """
+        应用物理合理的数据增强策略（方案H：保守增强）
+        
+        恢复保守策略，仅保留不破坏物理约束的增强方法：
+        - 小量高斯噪声：模拟测量噪声
+        - 轻微幅度缩放：模拟个体差异（全局缩放）
+        - 时间偏移：不改变空间关系
+        
+        去除的方法（可能破坏ATCNet的时空特征学习）：
+        - 通道dropout：破坏空间结构
+        - 通道扰动：破坏通道间相对关系
+        - 强噪声：影响时间模式识别
+        """
+        
+        # 1. 小量高斯噪声（保守）
+        if np.random.rand() < 0.7:
+            noise_level = np.random.uniform(0.003, 0.008)
             channel_noise_level = np.random.uniform(0.001, noise_level, (data.shape[0], 1))
             noise = np.random.normal(0, 1, data.shape) * channel_noise_level
             data = data + noise
 
-        # 2. 随机幅度缩放 (增强版)
-        if np.random.rand() < 0.7:
-            scale_range = (0.8, 1.2)  # 扩大缩放范围
-            channel_scales = np.random.uniform(scale_range[0], scale_range[1], (data.shape[0], 1))
-            data = data * channel_scales
+        # 2. 轻微幅度缩放（全局，保持通道间相对关系）
+        if np.random.rand() < 0.5:
+            scale_range = (0.92, 1.08)
+            global_scale = np.random.uniform(scale_range[0], scale_range[1])
+            data = data * global_scale
 
-        # 3. 随机时间偏移 (增强版)
-        if np.random.rand() < 0.6:
-            max_shift = 25  # 增加最大偏移量
+        # 3. 时间偏移（适度）
+        if np.random.rand() < 0.5:
+            max_shift = 15
             shift = np.random.randint(-max_shift, max_shift + 1)
             if shift != 0:
                 data_shifted = np.zeros_like(data)
                 if shift > 0:
                     data_shifted[:, shift:] = data[:, :-shift]
+                    data_shifted[:, :shift] = data[:, :1]
                 else:
                     data_shifted[:, :shift] = data[:, -shift:]
+                    data_shifted[:, shift:] = data[:, -1:]
                 data = data_shifted
-
-        # 4. 新增：随机频域滤波
-        if np.random.rand() < 0.4:
-            # 随机应用低通或高通滤波
-            from scipy import signal
-            fs = 250  # 采样频率
-            if np.random.rand() < 0.5:
-                # 低通滤波
-                cutoff = np.random.uniform(30, 50)
-                b, a = signal.butter(4, cutoff/(fs/2), 'low')
-            else:
-                # 高通滤波
-                cutoff = np.random.uniform(0.5, 2)
-                b, a = signal.butter(4, cutoff/(fs/2), 'high')
-            
-            for ch in range(data.shape[0]):
-                try:
-                    data[ch, :] = signal.filtfilt(b, a, data[ch, :])
-                except:
-                    pass  # 如果滤波失败，跳过
-
-        # 5. 新增：随机通道dropout
-        if np.random.rand() < 0.3:
-            n_dropout = np.random.randint(1, 4)  # 随机丢弃1-3个通道
-            dropout_channels = np.random.choice(data.shape[0], n_dropout, replace=False)
-            data[dropout_channels, :] = 0
-
-        # 6. 新增：随机时间窗口masking
-        if np.random.rand() < 0.3:
-            mask_length = np.random.randint(10, 50)  # 随机mask长度
-            start_idx = np.random.randint(0, max(1, data.shape[1] - mask_length))
-            data[:, start_idx:start_idx + mask_length] *= 0.1  # 不完全置零，而是大幅衰减
-
-        # 7. 新增：Mixup数据增强 (概率较低，避免过度混合)
-        if np.random.rand() < 0.2:
-            lambda_mix = np.random.beta(0.2, 0.2)  # Beta分布生成混合系数
-            # 这里只做数据混合，标签混合在训练循环中处理
-            if hasattr(self, '_mixup_data_cache') and len(self._mixup_data_cache) > 0:
-                mix_data = self._mixup_data_cache[np.random.randint(len(self._mixup_data_cache))]
-                data = lambda_mix * data + (1 - lambda_mix) * mix_data
-
-        # 8. 新增：EMG伪迹模拟
-        if np.random.rand() < 0.15:
-            # 模拟肌电伪迹，主要影响边缘通道
-            artifact_channels = np.random.choice(range(min(4, data.shape[0])), 
-                                                size=np.random.randint(1, 3), replace=False)
-            for ch in artifact_channels:
-                artifact = np.random.normal(0, 0.3, data.shape[1]) * np.random.uniform(0.5, 2.0)
-                data[ch, :] += artifact
 
         return data.astype(np.float32)
     
@@ -713,7 +1143,7 @@ def build_head_model(subjects_dir, subject='fsaverage'):
 # 训练与评估函数
 # =================================================================================
 def train_model(data_dir, subject_id=None, num_epochs=500, batch_size=64, repeat_factor=3, 
-                dropout_rate=0.35, learning_rate=0.001, physics_weight=0.3, use_pinn=True):
+                dropout_rate=0.35, learning_rate=0.001, physics_weight=0.3, hemisphere_weight=0.3, use_pinn=True):
     """
     训练PINN+CNN混合模型函数
     """
@@ -855,21 +1285,23 @@ def train_model(data_dir, subject_id=None, num_epochs=500, batch_size=64, repeat
                               num_workers=0, pin_memory=True)
         
         # 初始化模型
-        model = PINN_CNN_BCI(
+        model = PINN_ATCNet_BCI(
             leadfield=leadfield,
             fwd_model=fwd,
             epochs_info=epochs_info,
             in_channels=22,
             seq_length=1000,
-            num_classes=2,
+            num_classes=4,  # 四分类：左手/右手/脚/舌头
             dropout_rate=dropout_rate,
             use_pinn=use_pinn,
+            init_physics_weight=physics_weight,
+            init_hemisphere_weight=hemisphere_weight,
             sfreq=250
         ).to(device)
         
         # 损失函数和优化器 - 平衡优化
         # 使用标签平滑的交叉熵损失
-        criterion = nn.CrossEntropyLoss(label_smoothing=0.15)  # 增加标签平滑强度
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
         optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=5e-4)  # 增加权重衰减
         # 使用更保守的学习率调度
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.6, patience=8, verbose=False)
@@ -901,13 +1333,38 @@ def train_model(data_dir, subject_id=None, num_epochs=500, batch_size=64, repeat
                 # 分类损失
                 class_loss = criterion(outputs['logits'], batch_labels)
                 
-                # PINN物理损失（如果使用PINN）
+                # PINN物理损失、四分类判别损失和对比学习损失（方案E）
                 if use_pinn:
                     physics_loss = outputs['physics_loss']
-                    # 总损失 = 分类损失 + 加权的PINN损失
-                    total_loss = class_loss + physics_weight * physics_loss
+                    
+                    # 四分类判别监督损失（基于源空间特征）
+                    hemisphere_loss = torch.tensor(0.0, device=device)
+                    if outputs['hemisphere_logits'] is not None:
+                        hemisphere_loss = criterion(outputs['hemisphere_logits'], batch_labels)
+                    
+                    # 对比学习损失（方案E改进2）
+                    contrastive_loss = torch.tensor(0.0, device=device)
+                    if 'hemisphere_features' in outputs and outputs['hemisphere_features'] is not None:
+                        contrastive_loss = model.compute_contrastive_loss(
+                            outputs['hemisphere_features'], 
+                            batch_labels, 
+                            margin=1.5
+                        )
+                    
+                    # 使用自适应权重（方案E改进3）
+                    adaptive_physics_weight = torch.abs(model.physics_weight_param)
+                    adaptive_hemisphere_weight = torch.abs(model.hemisphere_weight_param)
+                    contrastive_weight = 0.2  # 对比损失权重
+                    
+                    # 总损失 = 分类 + 自适应物理 + 自适应判别 + 对比学习
+                    total_loss = (class_loss + 
+                                 adaptive_physics_weight * physics_loss + 
+                                 adaptive_hemisphere_weight * hemisphere_loss +
+                                 contrastive_weight * contrastive_loss)
                 else:
                     physics_loss = torch.tensor(0.0, device=device)
+                    hemisphere_loss = torch.tensor(0.0, device=device)
+                    contrastive_loss = torch.tensor(0.0, device=device)
                     total_loss = class_loss
                 
                 # 反向传播
@@ -942,7 +1399,16 @@ def train_model(data_dir, subject_id=None, num_epochs=500, batch_size=64, repeat
                     
                     if use_pinn:
                         physics_loss = outputs['physics_loss']
-                        total_loss = class_loss + physics_weight * physics_loss
+                        hemisphere_loss = torch.tensor(0.0, device=device)
+                        if outputs['hemisphere_logits'] is not None:
+                            hemisphere_loss = criterion(outputs['hemisphere_logits'], batch_labels)
+                        
+                        # 验证阶段也使用自适应权重
+                        adaptive_physics_weight = torch.abs(model.physics_weight_param)
+                        adaptive_hemisphere_weight = torch.abs(model.hemisphere_weight_param)
+                        total_loss = (class_loss + 
+                                     adaptive_physics_weight * physics_loss + 
+                                     adaptive_hemisphere_weight * hemisphere_loss)
                     else:
                         physics_loss = torch.tensor(0.0, device=device)
                         total_loss = class_loss
@@ -986,7 +1452,11 @@ def train_model(data_dir, subject_id=None, num_epochs=500, batch_size=64, repeat
             if (epoch + 1) % 20 == 0:
                 if use_pinn:
                     avg_physics_loss = train_physics_loss / len(train_loader)
-                    print(f"轮次 {epoch+1}/{num_epochs}: 训练准确率 {train_acc:.2f}%, 验证准确率 {val_acc:.2f}%, PINN损失 {avg_physics_loss:.6f}")
+                    # 打印自适应权重（方案E）
+                    curr_physics_w = torch.abs(model.physics_weight_param).item()
+                    curr_hemisphere_w = torch.abs(model.hemisphere_weight_param).item()
+                    print(f"轮次 {epoch+1}/{num_epochs}: 训练准确率 {train_acc:.2f}%, 验证准确率 {val_acc:.2f}%, "
+                          f"PINN损失 {avg_physics_loss:.6f}, 权重[物理:{curr_physics_w:.3f}, 判别:{curr_hemisphere_w:.3f}]")
                 else:
                     print(f"轮次 {epoch+1}/{num_epochs}: 训练准确率 {train_acc:.2f}%, 验证准确率 {val_acc:.2f}%")
         
@@ -1040,23 +1510,27 @@ def train_model(data_dir, subject_id=None, num_epochs=500, batch_size=64, repeat
     final_test_loader = DataLoader(final_test_dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True)
     
     # 重新初始化模型
-    final_model = PINN_CNN_BCI(
+    final_model = PINN_ATCNet_BCI(
         leadfield=leadfield,
         fwd_model=fwd,
         epochs_info=epochs_info,
         in_channels=22,
         seq_length=1000,
-        num_classes=2,
+        num_classes=4,  # 四分类：左手/右手/脚/舌头
         dropout_rate=dropout_rate,
         use_pinn=use_pinn,
+        init_physics_weight=physics_weight,
+        init_hemisphere_weight=hemisphere_weight,
         sfreq=250
     ).to(device)
     
     final_optimizer = optim.Adam(final_model.parameters(), lr=learning_rate, weight_decay=1e-4)
     
-    # 快速训练最终模型（使用较少轮次）
+    # 快速训练最终模型（提高轮次并保存快照用于集成）
     final_model.train()
-    for epoch in range(min(50, num_epochs)):
+    FINAL_EPOCHS = max(120, num_epochs)
+    snapshot_states = deque(maxlen=5)
+    for epoch in range(FINAL_EPOCHS):
         for batch_data, batch_labels in final_train_loader:
             batch_data = batch_data.to(device)
             batch_labels = (batch_labels - 1).long().to(device)
@@ -1067,27 +1541,78 @@ def train_model(data_dir, subject_id=None, num_epochs=500, batch_size=64, repeat
             
             if use_pinn:
                 physics_loss = outputs['physics_loss']
-                total_loss = class_loss + physics_weight * physics_loss
+                hemisphere_loss = torch.tensor(0.0, device=device)
+                if outputs['hemisphere_logits'] is not None:
+                    hemisphere_loss = criterion(outputs['hemisphere_logits'], batch_labels)
+                
+                # 最终模型也使用自适应权重
+                adaptive_physics_weight = torch.abs(final_model.physics_weight_param)
+                adaptive_hemisphere_weight = torch.abs(final_model.hemisphere_weight_param)
+                total_loss = (class_loss + 
+                             adaptive_physics_weight * physics_loss + 
+                             adaptive_hemisphere_weight * hemisphere_loss)
             else:
                 physics_loss = torch.tensor(0.0, device=device)
                 total_loss = class_loss
                 
             total_loss.backward()
             final_optimizer.step()
+        # 保存最后若干epoch的快照
+        if epoch >= FINAL_EPOCHS - 5:
+            snapshot_states.append(copy.deepcopy(final_model.state_dict()))
     
     # 最终测试
     final_model.eval()
     test_predictions = []
     test_true_labels = []
     
+    # --- 快照集成 + 测试时增强(TTA) ---
+    def tta_predict_logits(model, x, device, n_aug=8):
+        model.eval()
+        logits_sum = torch.zeros((x.size(0), model.num_classes), device=device)
+        with torch.no_grad():
+            # 原始
+            out0 = model(x)['logits']
+            logits_sum += out0
+            # 增强
+            for _ in range(n_aug):
+                xa = x.clone()
+                # 轻微高斯噪声
+                noise_std = (0.002 + 0.004 * torch.rand(1, device=device)).item()
+                xa = xa + noise_std * torch.randn_like(xa)
+                # 全局轻微缩放
+                scale = 0.95 + 0.10 * torch.rand((xa.size(0), 1, 1), device=device)
+                xa = xa * scale
+                # 小幅时间位移
+                shift = int(torch.randint(-10, 11, (1,), device=device).item())
+                xa = torch.roll(xa, shifts=shift, dims=2)
+                logits_sum += model(xa)['logits']
+        return logits_sum / (n_aug + 1)
+
+    # 组装快照
+    snapshots = []
+    try:
+        snapshots = list(snapshot_states)
+    except Exception:
+        snapshots = []
+
+    # 若无快照，则使用当前最终模型
+    if not snapshots:
+        snapshots = [copy.deepcopy(final_model.state_dict())]
+
     with torch.no_grad():
         for batch_data, batch_labels in final_test_loader:
             batch_data = batch_data.to(device)
             batch_labels = (batch_labels - 1).long().to(device)
-            
-            outputs = final_model(batch_data)
-            _, predicted = torch.max(outputs['logits'].data, 1)
-            
+
+            # 集成多个快照 + TTA
+            logits_ensemble = torch.zeros((batch_data.size(0), final_model.num_classes), device=device)
+            for state in snapshots:
+                final_model.load_state_dict(state)
+                logits_ensemble += tta_predict_logits(final_model, batch_data, device, n_aug=8)
+            logits_ensemble /= len(snapshots)
+            predicted = torch.argmax(logits_ensemble, dim=1)
+
             test_predictions.extend(predicted.cpu().numpy())
             test_true_labels.extend(batch_labels.cpu().numpy())
     
@@ -1111,15 +1636,17 @@ def train_model(data_dir, subject_id=None, num_epochs=500, batch_size=64, repeat
 # =================================================================================
 if __name__ == '__main__':
     # ===================== 参数控制变量（方便修改） =====================
-    # 训练参数 - 平衡准确率和过拟合控制
-    BATCH_SIZE = 24          # 适中的批次大小，平衡训练稳定性和随机性
-    NUM_EPOCHS = 100         # 适中的训练轮数，配合严格早停
-    LEARNING_RATE = 0.0005   # 适中的学习率
-    DROPOUT_RATE = 0.5       # 增强Dropout，防止过拟合
-    PHYSICS_WEIGHT = 0.4     # 增加物理损失权重，增强正则化
+    # 训练参数 - 方案H：ATCNet+PINN融合（轻量化+有效化）
+    BATCH_SIZE = 32          # 标准批次大小
+    NUM_EPOCHS = 200         # 充分训练
+    LEARNING_RATE = 0.001    # ATCNet标准学习率
+    DROPOUT_RATE = 0.3       # 适度Dropout（ATCNet内部已有正则化）
+    PHYSICS_WEIGHT = 0.1    # 大幅降低物理损失权重（辅助作用）
+    HEMISPHERE_WEIGHT = 0.4  # 适度判别权重
+    CONTRASTIVE_WEIGHT = 0.2 # 标准对比学习权重
     
-    # 数据增强参数 - 平衡增强强度
-    REPEAT_FACTOR = 6        # 适中的数据增强倍数
+    # 数据增强参数 - 方案H：物理合理增强（恢复保守策略）
+    REPEAT_FACTOR = 3        # 适度数据扩充
     
     # 模型参数
     USE_PINN = True  # 是否使用PINN空域特征提取
@@ -1132,16 +1659,29 @@ if __name__ == '__main__':
     DATA_DIR = r"E:\pycharm\PINN\PINN\data\BCI2a"  # 请根据实际情况修改路径
     
     # ===================== 程序开始执行 =====================
-    print("=== 使用 PINN(空域) + CNN(时域) 混合模型进行BCI-IV-2a左右手分类 ===")
+    print("=== 使用 PINN(空域) + CNN(时域) 混合模型进行BCI-IV-2a四分类任务 ===")
+    print("=== 四个类别：左手、右手、双脚、舌头运动想象 ===")
     print(f"训练参数配置:")
     print(f"  - 批次大小: {BATCH_SIZE}")
     print(f"  - 训练轮数: {NUM_EPOCHS}")
     print(f"  - 学习率: {LEARNING_RATE}")
     print(f"  - Dropout率: {DROPOUT_RATE}")
-    print(f"  - 物理损失权重: {PHYSICS_WEIGHT}")
-    print(f"  - 数据增强倍数: {REPEAT_FACTOR}倍 ({'不使用增强' if REPEAT_FACTOR == 1 else f'包含{REPEAT_FACTOR-1}倍增强数据'})")
+    print(f"  - 物理损失权重(初始): {PHYSICS_WEIGHT} (自适应调整)")
+    print(f"  - 四分类判别权重(初始): {HEMISPHERE_WEIGHT} (自适应调整)")
+    print(f"  - 对比学习损失权重: {CONTRASTIVE_WEIGHT}")
+    if REPEAT_FACTOR == 1:
+        print(f"  - 数据增强: 不使用增强")
+    else:
+        print(f"  - 数据增强: {REPEAT_FACTOR}倍（物理合理增强：小量噪声+轻微缩放+适度时移）")
     print(f"  - PINN模式: {'启用' if USE_PINN else '禁用'}")
     print(f"  - 数据路径: {DATA_DIR}")
+    print(f"\n🚀 方案H: ATCNet + PINN 融合（轻量化+有效化）")
+    print(f"   ✅ 【核心】ATCNet：时间卷积 + 深度可分离卷积 + SE注意力 + 多头自注意力 + 多尺度TCN")
+    print(f"   ✅ 【辅助】PINN源定位：提供19维Motor Homunculus物理特征（降低权重至{PHYSICS_WEIGHT}）")
+    print(f"   ✅ 【融合】轻量化：ATCNet(32) + 源激活简化(20) + Motor特征(19) = 71维")
+    print(f"   ✅ 【正则】保守增强 + 适度Dropout({DROPOUT_RATE}) + 特征注意力 + 对比学习")
+    print(f"   📊 特征路径：ATCNet时空特征提取 → PINN物理特征增强 → 轻量融合 → 分类")
+    print(f"   📊 损失函数：分类(主) + 弱物理({PHYSICS_WEIGHT}) + 判别({HEMISPHERE_WEIGHT}) + 对比({CONTRASTIVE_WEIGHT})\n")
     
     # 记录全局开始时间
     global_start_time = time.time()
@@ -1192,6 +1732,7 @@ if __name__ == '__main__':
                 dropout_rate=DROPOUT_RATE,
                 learning_rate=LEARNING_RATE,
                 physics_weight=PHYSICS_WEIGHT,
+                hemisphere_weight=HEMISPHERE_WEIGHT,
                 use_pinn=USE_PINN
             )
             if not results: 

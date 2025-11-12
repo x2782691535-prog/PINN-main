@@ -1,26 +1,26 @@
 {
-  "testing_samples": 11,
-  "average_mle_mm": 77.18109889763508,
-  "std_mle_mm": 26.710233240967195,
+  "testing_samples": 7,
+  "average_mle_mm": 95.20687245181092,
+  "std_mle_mm": 13.118327299055476,
   "detailed": [
     {
       "run": 1,
-      "mle_mm": 104.65615051926238,
-      "auc": 0.03660768761439903,
-      "pr_auc": 0.00012664640324214793,
+      "mle_mm": 102.6340522369191,
+      "auc": 0.7928004881025015,
+      "pr_auc": 0.0005885815185403178,
       "pred_pos": [
-        -0.037425898713991046,
-        -0.05202485993504524,
-        0.01704823615727946
+        -0.05105458339676261,
+        0.06312200054526329,
+        0.05994291044771671
       ],
       "gt_pos": [
-        0.04385,
-        -0.01153,
-        0.06908
+        0.03906,
+        0.02046,
+        0.03559
       ],
       "stimulation_info": {
-        "Description": "Stimulation of channel K13-14 1mA",
-        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-01_eeg.npy",
+        "Description": "Stimulation of channel B11-12 0.1mA",
+        "Sources": "/sub-07/eeg/sub-07_task-seegstim_run-01_eeg.npy",
         "BaselineCorrection": true,
         "BaselineCorrectionMethod": "mean subtraction",
         "BaselinePeriod": [
@@ -31,22 +31,22 @@
     },
     {
       "run": 2,
-      "mle_mm": 104.65615051926238,
-      "auc": 0.06064673581452107,
-      "pr_auc": 0.000129886998311469,
+      "mle_mm": 91.1964918791632,
+      "auc": 0.35936546674801706,
+      "pr_auc": 0.00019043991620643687,
       "pred_pos": [
-        -0.037425898713991046,
-        -0.05202485993504524,
-        0.01704823615727946
+        0.0024838722310960293,
+        -0.02388918027281761,
+        0.106386449187994
       ],
       "gt_pos": [
-        0.04385,
-        -0.01153,
-        0.06908
+        0.03906,
+        0.02046,
+        0.03559
       ],
       "stimulation_info": {
-        "Description": "Stimulation of channel K13-14 5mA",
-        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-02_eeg.npy",
+        "Description": "Stimulation of channel B11-12 0.3mA",
+        "Sources": "/sub-07/eeg/sub-07_task-seegstim_run-02_eeg.npy",
         "BaselineCorrection": true,
         "BaselineCorrectionMethod": "mean subtraction",
         "BaselinePeriod": [
@@ -57,22 +57,22 @@
     },
     {
       "run": 3,
-      "mle_mm": 75.60514431232325,
-      "auc": 0.8331909701037218,
-      "pr_auc": 0.0007309941520467836,
+      "mle_mm": 71.77684598803327,
+      "auc": 0.910189139719341,
+      "pr_auc": 0.0013568521031207597,
       "pred_pos": [
-        0.017074841307476163,
-        -0.08137047663331032,
-        0.019585250120144337
+        -0.05105458339676261,
+        0.06312200054526329,
+        0.05994291044771671
       ],
       "gt_pos": [
-        0.0153,
-        -0.0297,
-        0.07475
+        -0.06414,
+        -0.00489,
+        0.0411
       ],
       "stimulation_info": {
-        "Description": "Stimulation of channel N2-3 1mA",
-        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-03_eeg.npy",
+        "Description": "Stimulation of channel B'13-14 0.1mA",
+        "Sources": "/sub-07/eeg/sub-07_task-seegstim_run-03_eeg.npy",
         "BaselineCorrection": true,
         "BaselineCorrectionMethod": "mean subtraction",
         "BaselinePeriod": [
@@ -83,22 +83,22 @@
     },
     {
       "run": 4,
-      "mle_mm": 30.04597287384861,
-      "auc": 0.9831604636973764,
-      "pr_auc": 0.007194244604316547,
+      "mle_mm": 86.30087155833934,
+      "auc": 0.5815741305674191,
+      "pr_auc": 0.0002915451895043732,
       "pred_pos": [
-        -0.017358151962980628,
-        -0.021990977227687836,
-        0.07250094803748652
+        0.02195370988920331,
+        -0.0023972727358341217,
+        0.046531377360224724
       ],
       "gt_pos": [
-        0.01166,
-        -0.02955,
-        0.07439
+        -0.06414,
+        -0.00489,
+        0.0411
       ],
       "stimulation_info": {
-        "Description": "Stimulation of channel N2-3 5mA",
-        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-04_eeg.npy",
+        "Description": "Stimulation of channel B'13-14 0.3mA",
+        "Sources": "/sub-07/eeg/sub-07_task-seegstim_run-04_eeg.npy",
         "BaselineCorrection": true,
         "BaselineCorrectionMethod": "mean subtraction",
         "BaselinePeriod": [
@@ -109,22 +109,22 @@
     },
     {
       "run": 5,
-      "mle_mm": 29.88965472851766,
-      "auc": 0.8982306284319708,
-      "pr_auc": 0.0011976047904191617,
+      "mle_mm": 93.87673350627188,
+      "auc": 0.509456985967053,
+      "pr_auc": 0.0002486943546381497,
       "pred_pos": [
-        0.015057479264214635,
-        -0.04073591157793999,
-        0.06223154085455462
+        -0.05105458339676261,
+        0.06312200054526329,
+        0.05994291044771671
       ],
       "gt_pos": [
-        0.03939,
-        -0.0311,
-        0.07667
+        -0.00138,
+        -0.01272,
+        0.0843
       ],
       "stimulation_info": {
-        "Description": "Stimulation of channel N10-11 1mA",
-        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-05_eeg.npy",
+        "Description": "Stimulation of channel Q2-3 0.3mA",
+        "Sources": "/sub-07/eeg/sub-07_task-seegstim_run-05_eeg.npy",
         "BaselineCorrection": true,
         "BaselineCorrectionMethod": "mean subtraction",
         "BaselinePeriod": [
@@ -135,22 +135,22 @@
     },
     {
       "run": 6,
-      "mle_mm": 88.57060851601351,
-      "auc": 0.025259304453935316,
-      "pr_auc": 0.00012517211165352359,
+      "mle_mm": 115.11815498128699,
+      "auc": 0.0902989627821843,
+      "pr_auc": 0.00013412017167381974,
       "pred_pos": [
-        -0.037425898713991046,
-        -0.05202485993504524,
-        0.01704823615727946
+        -0.005693046376109123,
+        0.07918532192707062,
+        0.03154202364385128
       ],
       "gt_pos": [
-        0.03305,
-        -0.00328,
-        0.03945
+        0.04721,
+        -0.0071,
+        0.08639
       ],
       "stimulation_info": {
-        "Description": "Stimulation of channel S1-2 1mA",
-        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-06_eeg.npy",
+        "Description": "Stimulation of channel Q16-17 0.1mA",
+        "Sources": "/sub-07/eeg/sub-07_task-seegstim_run-06_eeg.npy",
         "BaselineCorrection": true,
         "BaselineCorrectionMethod": "mean subtraction",
         "BaselinePeriod": [
@@ -161,126 +161,22 @@
     },
     {
       "run": 7,
-      "mle_mm": 88.57060851601351,
-      "auc": 0.028798047589993936,
-      "pr_auc": 0.0001256281407035176,
+      "mle_mm": 105.54495701266275,
+      "auc": 0.026479560707748595,
+      "pr_auc": 0.00012532898859506203,
       "pred_pos": [
-        -0.037425898713991046,
-        -0.05202485993504524,
-        0.01704823615727946
+        -0.05321100866422057,
+        -0.01357973925769329,
+        0.05455649644136429
       ],
       "gt_pos": [
-        0.03305,
-        -0.00328,
-        0.03945
+        0.04721,
+        -0.0071,
+        0.08639
       ],
       "stimulation_info": {
-        "Description": "Stimulation of channel S1-2 5mA",
-        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-07_eeg.npy",
-        "BaselineCorrection": true,
-        "BaselineCorrectionMethod": "mean subtraction",
-        "BaselinePeriod": [
-          -0.3,
-          -0.05
-        ]
-      }
-    },
-    {
-      "run": 8,
-      "mle_mm": 48.67412193025618,
-      "auc": 0.4219646125686394,
-      "pr_auc": 0.00021105951878429716,
-      "pred_pos": [
-        0.039450782584026456,
-        -0.03817158564925194,
-        0.0066543162683956325
-      ],
-      "gt_pos": [
-        0.04016,
-        -0.00357,
-        0.04088
-      ],
-      "stimulation_info": {
-        "Description": "Stimulation of channel S3-4 1mA",
-        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-08_eeg.npy",
-        "BaselineCorrection": true,
-        "BaselineCorrectionMethod": "mean subtraction",
-        "BaselinePeriod": [
-          -0.3,
-          -0.05
-        ]
-      }
-    },
-    {
-      "run": 9,
-      "mle_mm": 94.52723469158364,
-      "auc": 0.07406955460646736,
-      "pr_auc": 0.00013176966662274345,
-      "pred_pos": [
-        -0.037425898713991046,
-        -0.05202485993504524,
-        0.01704823615727946
-      ],
-      "gt_pos": [
-        0.04016,
-        -0.00357,
-        0.04088
-      ],
-      "stimulation_info": {
-        "Description": "Stimulation of channel S3-4 5mA",
-        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-09_eeg.npy",
-        "BaselineCorrection": true,
-        "BaselineCorrectionMethod": "mean subtraction",
-        "BaselinePeriod": [
-          -0.3,
-          -0.05
-        ]
-      }
-    },
-    {
-      "run": 10,
-      "mle_mm": 97.86460307303268,
-      "auc": 0.1936546674801708,
-      "pr_auc": 0.00015130882130428205,
-      "pred_pos": [
-        -0.04586741398088634,
-        -0.028325457125902176,
-        0.022162050183396786
-      ],
-      "gt_pos": [
-        0.04681,
-        -0.00392,
-        0.04198
-      ],
-      "stimulation_info": {
-        "Description": "Stimulation of channel S5-6 1mA",
-        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-10_eeg.npy",
-        "BaselineCorrection": true,
-        "BaselineCorrectionMethod": "mean subtraction",
-        "BaselinePeriod": [
-          -0.3,
-          -0.05
-        ]
-      }
-    },
-    {
-      "run": 11,
-      "mle_mm": 85.93183819387211,
-      "auc": 0.24112263575350823,
-      "pr_auc": 0.0001607717041800643,
-      "pred_pos": [
-        0.017074841307476163,
-        -0.08137047663331032,
-        0.019585250120144337
-      ],
-      "gt_pos": [
-        0.04681,
-        -0.00392,
-        0.04198
-      ],
-      "stimulation_info": {
-        "Description": "Stimulation of channel S5-6 5mA",
-        "Sources": "/sub-01/eeg/sub-01_task-seegstim_run-11_eeg.npy",
+        "Description": "Stimulation of channel Q16-17 0.3mA",
+        "Sources": "/sub-07/eeg/sub-07_task-seegstim_run-07_eeg.npy",
         "BaselineCorrection": true,
         "BaselineCorrectionMethod": "mean subtraction",
         "BaselinePeriod": [

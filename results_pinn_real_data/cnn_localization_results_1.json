@@ -1,0 +1,163 @@
+{
+  "testing_samples": 6,
+  "average_mle_mm": 82.45470304265591,
+  "std_mle_mm": 25.429734817772854,
+  "detailed": [
+    {
+      "run": 1,
+      "mle_mm": 97.63978149304323,
+      "auc": 0.5643685173886517,
+      "pr_auc": 0.0002800336040324839,
+      "pred_pos": [
+        -0.006070983596146107,
+        -0.06401917990297079,
+        0.05658665485680103
+      ],
+      "gt_pos": [
+        -0.026,
+        0.03148,
+        0.06062
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel X'1-2 1mA",
+        "Sources": "/sub-02/eeg/sub-02_task-seegstim_run-01_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      }
+    },
+    {
+      "run": 2,
+      "mle_mm": 96.87650460091955,
+      "auc": 0.29371568029286155,
+      "pr_auc": 0.00017274140611504577,
+      "pred_pos": [
+        0.012438606470823288,
+        -0.057164049707353115,
+        0.053565701469779015
+      ],
+      "gt_pos": [
+        -0.026,
+        0.03148,
+        0.06062
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel X'1-2 0.5mA",
+        "Sources": "/sub-02/eeg/sub-02_task-seegstim_run-02_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      }
+    },
+    {
+      "run": 3,
+      "mle_mm": 101.44164249723674,
+      "auc": 0.11995118974984742,
+      "pr_auc": 0.00013863856924996534,
+      "pred_pos": [
+        0.012438606470823288,
+        -0.057164049707353115,
+        0.053565701469779015
+      ],
+      "gt_pos": [
+        -0.03605,
+        0.03131,
+        0.06413
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel X'4-5 1mA",
+        "Sources": "/sub-02/eeg/sub-02_task-seegstim_run-03_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      }
+    },
+    {
+      "run": 4,
+      "mle_mm": 46.28638567280467,
+      "auc": 0.6514948139109213,
+      "pr_auc": 0.00035001750087504374,
+      "pred_pos": [
+        -0.016154054552316666,
+        0.06632874999195337,
+        0.04132061591371894
+      ],
+      "gt_pos": [
+        -0.03605,
+        0.03131,
+        0.06413
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel X'4-5 0.5mA",
+        "Sources": "/sub-02/eeg/sub-02_task-seegstim_run-04_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      }
+    },
+    {
+      "run": 5,
+      "mle_mm": 47.124895934881444,
+      "auc": 0.4741915802318487,
+      "pr_auc": 0.0002320185614849188,
+      "pred_pos": [
+        -0.005553540773689747,
+        0.035091604106128216,
+        0.05080130323767662
+      ],
+      "gt_pos": [
+        -0.04917,
+        0.03141,
+        0.06826
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel X'8-9 1mA",
+        "Sources": "/sub-02/eeg/sub-02_task-seegstim_run-05_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      }
+    },
+    {
+      "run": 6,
+      "mle_mm": 105.35900805704978,
+      "auc": 0.5093349603416717,
+      "pr_auc": 0.0002486325211337643,
+      "pred_pos": [
+        -0.006070983596146107,
+        -0.06401917990297079,
+        0.05658665485680103
+      ],
+      "gt_pos": [
+        -0.04917,
+        0.03141,
+        0.06826
+      ],
+      "stimulation_info": {
+        "Description": "Stimulation of channel X'8-9 0.5mA",
+        "Sources": "/sub-02/eeg/sub-02_task-seegstim_run-06_eeg.npy",
+        "BaselineCorrection": true,
+        "BaselineCorrectionMethod": "mean subtraction",
+        "BaselinePeriod": [
+          -0.3,
+          -0.05
+        ]
+      }
+    }
+  ]
+}

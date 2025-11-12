@@ -15,6 +15,8 @@ import random
 import time
 import glob
 import shutil
+import json
+import pandas as pd
 
 # 在导入TensorFlow之前设置环境变量，抑制警告信息
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # 抑制INFO和WARNING信息
@@ -607,7 +609,7 @@ class RealDataPINNLocalizer:
             auc_pr = average_precision_score(gt_mask, pred_score_norm)
         except:
             auc_pr = 0.5
-
+            
         return {'mle': float(mle),
                 'auc': float(auc),
                 'auc_pr': float(auc_pr),
@@ -713,7 +715,7 @@ class RealDataPINNLocalizer:
                 self.fwd_fixed['src'][1]['rr'][self.fwd_fixed['src'][1]['vertno']]
             ])
         print(f"   - 源空间点数: {len(source_positions)}")
-
+        
         # 4. 加载ground truth位置
         true_positions, electrode_names = self.load_ground_truth_positions(subject)
         if true_positions is None:
@@ -741,7 +743,7 @@ class RealDataPINNLocalizer:
             # 打印峰值激活信息：
             # 注：src_activation的max值已在calculate_localization_error打印
             results.append({
-                'run': run,
+                    'run': run,
                 'metrics': run_metrics,
                 'stimulation_info': stim_info
             })
@@ -805,23 +807,436 @@ class RealDataPINNLocalizer:
             print(f"✅ 结果已保存到: {results_file}")
         except Exception as e:
             print(f"❌ 保存结果失败: {e}")
+    
+
+def cleanup_memory(localizer=None):
+    """清理内存，释放GPU和CPU资源"""
+    import gc
+    
+    try:
+        # 1. 清理localizer对象的模型和数据
+        if localizer is not None:
+            # 清理PINN模型
+            if hasattr(localizer, 'pinn_model') and localizer.pinn_model is not None:
+                if hasattr(localizer.pinn_model, 'model') and localizer.pinn_model.model is not None:
+                    # 删除Keras模型
+                    del localizer.pinn_model.model
+                del localizer.pinn_model
+                localizer.pinn_model = None
+            
+            # 清理前向模型
+            if hasattr(localizer, 'fwd_fixed') and localizer.fwd_fixed is not None:
+                del localizer.fwd_fixed
+                localizer.fwd_fixed = None
+            
+            # 清理缓存的数据
+            if hasattr(localizer, 'eeg_data'):
+                localizer.eeg_data.clear()
+            if hasattr(localizer, 'ground_truth_positions'):
+                localizer.ground_truth_positions.clear()
+            if hasattr(localizer, 'forward_models'):
+                localizer.forward_models.clear()
+            if hasattr(localizer, 'electrode_positions'):
+                localizer.electrode_positions.clear()
+        
+        # 2. 强制垃圾回收
+        gc.collect()
+        
+        # 3. 清理TensorFlow/Keras后端
+        try:
+            import tensorflow as tf
+            from tensorflow import keras
+            
+            # 清理Keras会话
+            keras.backend.clear_session()
+            
+            # 如果使用GPU，清理GPU内存
+            if tf.config.experimental.list_physical_devices('GPU'):
+                gpus = tf.config.experimental.list_physical_devices('GPU')
+                for gpu in gpus:
+                    try:
+                        # 重置GPU内存增长
+                        tf.config.experimental.set_memory_growth(gpu, True)
+                    except Exception:
+                        pass
+                
+                # 尝试手动清理GPU内存（如果可用）
+                try:
+                    tf.keras.backend.clear_session()
+                    tf.compat.v1.reset_default_graph()
+                except Exception:
+                    pass
+        
+        except ImportError:
+            pass
+        
+        # 4. 再次强制垃圾回收
+        gc.collect()
+        
+    except Exception as e:
+        print(f"   ⚠️ 内存清理过程中出现警告: {e}")
+
+
+def summarize_experiments(all_experiments_results, subject, model_type, source_time_course):
+    """汇总多次实验的结果"""
+    import pandas as pd
+    
+    # 收集所有实验的统计数据
+    experiment_stats = []
+    all_run_data = []
+    
+    for exp_result in all_experiments_results:
+        exp_id = exp_result['experiment_id']
+        
+        # 提取该实验的所有run结果
+        run_results = exp_result.get('results', [])
+        
+        # 计算该实验的统计指标
+        if isinstance(run_results, list):
+            mles = [r['metrics']['mle'] for r in run_results]
+            aucs = [r['metrics']['auc'] for r in run_results]
+            auc_prs = [r['metrics']['auc_pr'] for r in run_results]
+            
+            # 找到最小MLE和最大AUC对应的run
+            min_mle_idx = int(np.argmin(mles))
+            max_auc_idx = int(np.argmax(aucs))
+            min_mle_run = run_results[min_mle_idx]['run']
+            max_auc_run = run_results[max_auc_idx]['run']
+            
+            exp_stats = {
+                'experiment_id': exp_id,
+                'num_runs': len(run_results),
+                'avg_mle': np.mean(mles),
+                'std_mle': np.std(mles),
+                'min_mle': np.min(mles),
+                'min_mle_run': min_mle_run,
+                'max_mle': np.max(mles),
+                'avg_auc': np.mean(aucs),
+                'std_auc': np.std(aucs),
+                'min_auc': np.min(aucs),
+                'max_auc': np.max(aucs),
+                'max_auc_run': max_auc_run,
+                'avg_auc_pr': np.mean(auc_prs),
+                'std_auc_pr': np.std(auc_prs),
+                'min_auc_pr': np.min(auc_prs),
+                'max_auc_pr': np.max(auc_prs),
+            }
+            experiment_stats.append(exp_stats)
+            
+            # 收集所有run的详细数据
+            for run_result in run_results:
+                run_data = {
+                    'experiment_id': exp_id,
+                    'run': run_result['run'],
+                    'mle': run_result['metrics']['mle'],
+                    'auc': run_result['metrics']['auc'],
+                    'auc_pr': run_result['metrics']['auc_pr'],
+                }
+                all_run_data.append(run_data)
+    
+    # 计算跨实验的总体统计
+    if experiment_stats:
+        overall_stats = {
+            'subject': subject,
+            'model_type': model_type,
+            'source_time_course': source_time_course,
+            'num_experiments': len(experiment_stats),
+            'total_runs': sum([exp['num_runs'] for exp in experiment_stats]),
+            
+            # MLE统计
+            'mle_mean_across_experiments': np.mean([exp['avg_mle'] for exp in experiment_stats]),
+            'mle_std_across_experiments': np.std([exp['avg_mle'] for exp in experiment_stats]),
+            'mle_min_across_all': np.min([exp['min_mle'] for exp in experiment_stats]),
+            'mle_max_across_all': np.max([exp['max_mle'] for exp in experiment_stats]),
+            
+            # AUC统计
+            'auc_mean_across_experiments': np.mean([exp['avg_auc'] for exp in experiment_stats]),
+            'auc_std_across_experiments': np.std([exp['avg_auc'] for exp in experiment_stats]),
+            'auc_min_across_all': np.min([exp['min_auc'] for exp in experiment_stats]),
+            'auc_max_across_all': np.max([exp['max_auc'] for exp in experiment_stats]),
+            
+            # PR-AUC统计
+            'auc_pr_mean_across_experiments': np.mean([exp['avg_auc_pr'] for exp in experiment_stats]),
+            'auc_pr_std_across_experiments': np.std([exp['avg_auc_pr'] for exp in experiment_stats]),
+            'auc_pr_min_across_all': np.min([exp['min_auc_pr'] for exp in experiment_stats]),
+            'auc_pr_max_across_all': np.max([exp['max_auc_pr'] for exp in experiment_stats]),
+        }
+        
+        return {
+            'overall_stats': overall_stats,
+            'experiment_stats': experiment_stats,
+            'all_run_data': all_run_data
+        }
+    else:
+        return None
+
+
+def display_summary_table(summary_results):
+    """以表格形式显示汇总结果"""
+    import pandas as pd
+    
+    if summary_results is None:
+        print("❌ 无汇总结果可显示")
+        return
+        
+    overall = summary_results['overall_stats']
+    exp_stats = summary_results['experiment_stats']
+    
+    print("📊 实验汇总结果")
+    print("=" * 100)
+    
+    # 基本信息
+    print(f"被试: {overall['subject']}")
+    print(f"模型: {overall['model_type'].upper()}")
+    print(f"源时间过程: {overall['source_time_course']}")
+    print(f"实验次数: {overall['num_experiments']}")
+    print(f"总run数: {overall['total_runs']}")
+    print()
+    
+    # 总体统计表格
+    print("📈 总体统计 (跨所有实验)")
+    print("-" * 80)
+    
+    summary_data = {
+        '指标': ['MLE (mm)', 'AUC', 'PR-AUC'],
+        '均值': [
+            f"{overall['mle_mean_across_experiments']:.2f}",
+            f"{overall['auc_mean_across_experiments']:.4f}",
+            f"{overall['auc_pr_mean_across_experiments']:.4f}"
+        ],
+        '标准差': [
+            f"{overall['mle_std_across_experiments']:.2f}",
+            f"{overall['auc_std_across_experiments']:.4f}",
+            f"{overall['auc_pr_std_across_experiments']:.4f}"
+        ],
+        '最小值': [
+            f"{overall['mle_min_across_all']:.2f}",
+            f"{overall['auc_min_across_all']:.4f}",
+            f"{overall['auc_pr_min_across_all']:.4f}"
+        ],
+        '最大值': [
+            f"{overall['mle_max_across_all']:.2f}",
+            f"{overall['auc_max_across_all']:.4f}",
+            f"{overall['auc_pr_max_across_all']:.4f}"
+        ]
+    }
+    
+    summary_df = pd.DataFrame(summary_data)
+    print(summary_df.to_string(index=False))
+    print()
+    
+    # 各实验详细结果表格
+    print("📋 各实验详细结果")
+    print("-" * 100)
+    
+    exp_data = {
+        '实验ID': [exp['experiment_id'] for exp in exp_stats],
+        'Run数': [exp['num_runs'] for exp in exp_stats],
+        'MLE均值': [f"{exp['avg_mle']:.2f}" for exp in exp_stats],
+        'MLE标准差': [f"{exp['std_mle']:.2f}" for exp in exp_stats],
+        '最小MLE': [f"{exp['min_mle']:.2f}" for exp in exp_stats],
+        '最小MLE_Run': [f"run-{exp['min_mle_run']:02d}" for exp in exp_stats],
+        'AUC均值': [f"{exp['avg_auc']:.4f}" for exp in exp_stats],
+        'AUC标准差': [f"{exp['std_auc']:.4f}" for exp in exp_stats],
+        '最大AUC': [f"{exp['max_auc']:.4f}" for exp in exp_stats],
+        '最大AUC_Run': [f"run-{exp['max_auc_run']:02d}" for exp in exp_stats],
+        'PR-AUC均值': [f"{exp['avg_auc_pr']:.4f}" for exp in exp_stats],
+        'PR-AUC标准差': [f"{exp['std_auc_pr']:.4f}" for exp in exp_stats],
+    }
+    
+    exp_df = pd.DataFrame(exp_data)
+    print(exp_df.to_string(index=False))
+    print()
+
+
+def save_experiment_results(all_experiments_results, summary_results, subject, model_type, source_time_course):
+    """保存实验结果到文件"""
+    import pandas as pd
+    from datetime import datetime
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # 保存详细结果 (JSON)
+    detailed_filename = f"multi_experiment_detailed_{subject}_{model_type}_{source_time_course}_{timestamp}.json"
+    try:
+        with open(detailed_filename, 'w', encoding='utf-8') as f:
+            json.dump({
+                'metadata': {
+                    'subject': subject,
+                    'model_type': model_type,
+                    'source_time_course': source_time_course,
+                    'timestamp': timestamp,
+                    'num_experiments': len(all_experiments_results)
+                },
+                'experiments': all_experiments_results,
+                'summary': summary_results
+            }, f, indent=2, ensure_ascii=False)
+        print(f"✅ 详细结果已保存到: {detailed_filename}")
+    except Exception as e:
+        print(f"❌ 保存详细结果失败: {e}")
+    
+    # 保存汇总表格 (CSV)
+    if summary_results:
+        # 总体统计表
+        overall_filename = f"multi_experiment_summary_{subject}_{model_type}_{source_time_course}_{timestamp}.csv"
+        try:
+            overall = summary_results['overall_stats']
+            overall_df = pd.DataFrame([{
+                '被试': overall['subject'],
+                '模型': overall['model_type'],
+                '源时间过程': overall['source_time_course'],
+                '实验次数': overall['num_experiments'],
+                '总run数': overall['total_runs'],
+                'MLE均值': f"{overall['mle_mean_across_experiments']:.2f}",
+                'MLE标准差': f"{overall['mle_std_across_experiments']:.2f}",
+                'MLE最小值': f"{overall['mle_min_across_all']:.2f}",
+                'MLE最大值': f"{overall['mle_max_across_all']:.2f}",
+                'AUC均值': f"{overall['auc_mean_across_experiments']:.4f}",
+                'AUC标准差': f"{overall['auc_std_across_experiments']:.4f}",
+                'AUC最小值': f"{overall['auc_min_across_all']:.4f}",
+                'AUC最大值': f"{overall['auc_max_across_all']:.4f}",
+                'PR-AUC均值': f"{overall['auc_pr_mean_across_experiments']:.4f}",
+                'PR-AUC标准差': f"{overall['auc_pr_std_across_experiments']:.4f}",
+                'PR-AUC最小值': f"{overall['auc_pr_min_across_all']:.4f}",
+                'PR-AUC最大值': f"{overall['auc_pr_max_across_all']:.4f}",
+            }])
+            overall_df.to_csv(overall_filename, index=False, encoding='utf-8-sig')
+            print(f"✅ 汇总结果已保存到: {overall_filename}")
+        except Exception as e:
+            print(f"❌ 保存汇总结果失败: {e}")
+        
+        # 各实验详细表
+        exp_detail_filename = f"multi_experiment_details_{subject}_{model_type}_{source_time_course}_{timestamp}.csv"
+        try:
+            exp_stats = summary_results['experiment_stats']
+            # 创建带有格式化字段的DataFrame
+            exp_detail_data = []
+            for exp in exp_stats:
+                exp_detail_data.append({
+                    '实验ID': exp['experiment_id'],
+                    'Run数': exp['num_runs'],
+                    'MLE均值': exp['avg_mle'],
+                    'MLE标准差': exp['std_mle'],
+                    '最小MLE': exp['min_mle'],
+                    '最小MLE_Run': f"run-{exp['min_mle_run']:02d}",
+                    '最大MLE': exp['max_mle'],
+                    'AUC均值': exp['avg_auc'],
+                    'AUC标准差': exp['std_auc'],
+                    '最小AUC': exp['min_auc'],
+                    '最大AUC': exp['max_auc'],
+                    '最大AUC_Run': f"run-{exp['max_auc_run']:02d}",
+                    'PR-AUC均值': exp['avg_auc_pr'],
+                    'PR-AUC标准差': exp['std_auc_pr'],
+                    '最小PR-AUC': exp['min_auc_pr'],
+                    '最大PR-AUC': exp['max_auc_pr'],
+                })
+            exp_df = pd.DataFrame(exp_detail_data)
+            exp_df.to_csv(exp_detail_filename, index=False, encoding='utf-8-sig')
+            print(f"✅ 实验详细表已保存到: {exp_detail_filename}")
+        except Exception as e:
+            print(f"❌ 保存实验详细表失败: {e}")
 
 
 if __name__ == "__main__":
     # ============ 配置参数（直接修改这里） ============
     SUBJECT = 'sub-01'              # 被试ID: sub-01 到 sub-07
-    MODEL_TYPE = 'fc'             # 模型类型: 'pinn', 'fc', 'lstm', 'cnn'
+    MODEL_TYPE = 'fc'               # 模型类型: 'pinn', 'fc', 'lstm', 'cnn'
     SOURCE_TIME_COURSE = 'pulse'    # 源时间过程: 'pulse'(脉冲), 'sine'(正弦), 'random'(随机)
+    NUM_EXPERIMENTS = 10            # 实验次数：一次运行进行多少次独立实验
     # ==============================================
 
-    localizer = RealDataPINNLocalizer(DATASET_PATH)
-    localizer.model_type = MODEL_TYPE
-    localizer.source_time_course = SOURCE_TIME_COURSE
-
-    print(f"\n{'='*60}")
+    # 存储所有实验结果
+    all_experiments_results = []
+    
+    print(f"\n{'='*80}")
+    print(f"  开始 {NUM_EXPERIMENTS} 次独立实验")
     print(f"  模型类型: {MODEL_TYPE.upper()}")
     print(f"  源时间过程: {SOURCE_TIME_COURSE}")
     print(f"  被试: {SUBJECT}")
-    print(f"{'='*60}\n")
+    print(f"{'='*80}\n")
+    
+    # 初始内存清理
+    print("🧹 初始内存清理...")
+    cleanup_memory()
+    print("   初始内存清理完成\n")
 
-    localizer.run_analysis(SUBJECT)
+    # 运行多次实验
+    for experiment_idx in range(NUM_EXPERIMENTS):
+        print(f"\n🔬 实验 {experiment_idx + 1}/{NUM_EXPERIMENTS}")
+        print("-" * 60)
+        
+        # 创建新的localizer实例，确保每次实验独立
+        localizer = RealDataPINNLocalizer(DATASET_PATH)
+        localizer.model_type = MODEL_TYPE
+        localizer.source_time_course = SOURCE_TIME_COURSE
+        
+        # 运行单次实验
+        experiment_result = localizer.run_analysis(SUBJECT)
+        
+        if experiment_result is not None:
+            # experiment_result 是一个包含所有run结果的列表
+            # 我们需要将其包装成带有experiment_id的字典
+            experiment_data = {
+                'experiment_id': experiment_idx + 1,
+                'results': experiment_result
+            }
+            all_experiments_results.append(experiment_data)
+            print(f"✅ 实验 {experiment_idx + 1} 完成")
+        else:
+            print(f"❌ 实验 {experiment_idx + 1} 失败")
+        
+        # 清理内存
+        print(f"🧹 清理实验 {experiment_idx + 1} 的内存...")
+        
+        # 显示清理前的内存使用情况（可选）
+        try:
+            import psutil
+            memory_before = psutil.virtual_memory().percent
+            print(f"   清理前内存使用: {memory_before:.1f}%")
+        except ImportError:
+            pass
+        
+        cleanup_memory(localizer)
+        
+        # 显示清理后的内存使用情况（可选）
+        try:
+            import psutil
+            memory_after = psutil.virtual_memory().percent
+            print(f"   清理后内存使用: {memory_after:.1f}%")
+            if 'memory_before' in locals():
+                freed = memory_before - memory_after
+                if freed > 0:
+                    print(f"   释放内存: {freed:.1f}%")
+        except ImportError:
+            pass
+        
+        print(f"   内存清理完成")
+        
+        # 删除localizer引用
+        del localizer
+    
+    # 汇总和展示结果
+    if all_experiments_results:
+        print(f"\n{'='*80}")
+        print(f"  {len(all_experiments_results)} 次实验完成，开始汇总结果...")
+        print(f"{'='*80}\n")
+        
+        # 汇总结果
+        summary_results = summarize_experiments(all_experiments_results, SUBJECT, MODEL_TYPE, SOURCE_TIME_COURSE)
+        
+        # 显示汇总表格
+        display_summary_table(summary_results)
+        
+        # 保存详细结果和汇总结果
+        save_experiment_results(all_experiments_results, summary_results, SUBJECT, MODEL_TYPE, SOURCE_TIME_COURSE)
+        
+        # 最终内存清理
+        print(f"\n🧹 最终内存清理...")
+        cleanup_memory()
+        print("   最终内存清理完成")
+    else:
+        print("❌ 所有实验都失败了，无法生成汇总结果")
+        
+    print(f"\n{'='*80}")
+    print("  所有实验和清理工作完成！")
+    print(f"{'='*80}")

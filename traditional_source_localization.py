@@ -87,35 +87,47 @@ class TraditionalSourceLocalizer:
             print(f"前向模型文件不存在: {fwd_path}")
             return None
     
-    def load_eeg_data(self, subject):
-        """加载EEG数据"""
+    def load_all_eeg_runs(self, subject):
+        """加载所有run的EEG数据"""
         eeg_dir = self.dataset_path / "derivatives" / "epochs" / subject / "eeg"
         
         # 查找所有run的epochs文件
-        epochs_files = list(eeg_dir.glob(f"{subject}_task-seegstim_run-*_epochs.npy"))
+        epochs_files = sorted(list(eeg_dir.glob(f"{subject}_task-seegstim_run-*_epochs.npy")))
         
         if not epochs_files:
             print(f"未找到 {subject} 的EEG数据文件")
-            return None, None
+            return None
         
-        all_epochs_data = []
-        
-        # 只取第一个run的数据进行测试
-        epochs_file = sorted(epochs_files)[0]
+        # 加载通道信息（所有run使用相同的通道）
+        channels_file = epochs_files[0].parent / epochs_files[0].name.replace('_epochs.npy', '_channels.tsv')
         try:
-            # 加载epochs数据
-            epochs_data = np.load(epochs_file)
-            
-            # 加载通道信息
-            channels_file = epochs_file.parent / epochs_file.name.replace('_epochs.npy', '_channels.tsv')
             channels_df = pd.read_csv(channels_file, sep='\t')
-            
-            print(f"成功加载 {subject} EEG数据: {epochs_data.shape}")
-            return epochs_data, channels_df
-            
         except Exception as e:
-            print(f"加载 {epochs_file} 失败: {e}")
-            return None, None
+            print(f"加载通道信息失败: {e}")
+            return None
+        
+        # 加载所有run的数据
+        all_runs_data = []
+        for epochs_file in epochs_files:
+            try:
+                epochs_data = np.load(epochs_file)
+                run_number = epochs_file.stem.split('run-')[1].split('_')[0]
+                all_runs_data.append({
+                    'run': int(run_number),
+                    'data': epochs_data,
+                    'channels': channels_df
+                })
+                print(f"  成功加载 run-{run_number}: {epochs_data.shape}")
+            except Exception as e:
+                print(f"  加载 {epochs_file} 失败: {e}")
+                continue
+        
+        if not all_runs_data:
+            print(f"未能加载 {subject} 的任何run数据")
+            return None
+        
+        print(f"成功加载 {subject} 的 {len(all_runs_data)} 个run")
+        return all_runs_data
     
     def load_ground_truth_positions(self, subject):
         """加载ground truth电极位置"""
@@ -310,21 +322,19 @@ class TraditionalSourceLocalizer:
     
     
     def process_subject(self, subject):
-        """处理单个被试"""
+        """处理单个被试的所有run"""
         print(f"\n{'='*50}")
         print(f"开始处理被试: {subject}")
         print(f"{'='*50}")
-        
-        subject_results = {}
         
         # 1. 加载前向模型
         fwd = self.load_forward_model(subject)
         if fwd is None:
             return None
         
-        # 2. 加载EEG数据
-        eeg_data, channels_df = self.load_eeg_data(subject)
-        if eeg_data is None:
+        # 2. 加载所有run的EEG数据
+        all_runs_data = self.load_all_eeg_runs(subject)
+        if all_runs_data is None:
             return None
         
         # 3. 加载ground truth位置
@@ -332,32 +342,62 @@ class TraditionalSourceLocalizer:
         if gt_positions is None:
             return None
         
-        # 4. 创建Epochs对象
-        epochs = self.create_epochs_object(eeg_data, channels_df)
-        if epochs is None:
-            return None
+        # 4. 对每个run进行处理，收集结果
+        run_results = {'MNE': [], 'eLORETA': []}
         
-        # 5. 应用MNE方法
-        print("\n应用MNE方法...")
-        stc_mne, inv_op_mne = self.apply_mne_method(epochs, fwd, method='MNE')
-        if stc_mne is not None:
-            metrics_mne = self.evaluate_localization(stc_mne, gt_positions, fwd)
-            subject_results['MNE'] = {
-                'metrics': metrics_mne
-            }
-            if metrics_mne:
-                print(f"MNE - MLE: {metrics_mne['mle']:.2f} mm, AUC: {metrics_mne['auc_mean']:.4f}")
+        for run_data in all_runs_data:
+            run_num = run_data['run']
+            eeg_data = run_data['data']
+            channels_df = run_data['channels']
+            
+            print(f"\n--- 处理 Run {run_num} ---")
+            
+            # 创建Epochs对象
+            epochs = self.create_epochs_object(eeg_data, channels_df)
+            if epochs is None:
+                print(f"  Run {run_num}: 创建Epochs对象失败，跳过")
+                continue
+            
+            # 应用MNE方法
+            stc_mne, inv_op_mne = self.apply_mne_method(epochs, fwd, method='MNE')
+            if stc_mne is not None:
+                metrics_mne = self.evaluate_localization(stc_mne, gt_positions, fwd)
+                if metrics_mne:
+                    run_results['MNE'].append(metrics_mne)
+                    print(f"  MNE - MLE: {metrics_mne['mle']:.2f} mm, AUC: {metrics_mne['auc_mean']:.4f}")
+            
+            # 应用eLORETA方法
+            stc_eloreta, inv_op_eloreta = self.apply_mne_method(epochs, fwd, method='eLORETA')
+            if stc_eloreta is not None:
+                metrics_eloreta = self.evaluate_localization(stc_eloreta, gt_positions, fwd)
+                if metrics_eloreta:
+                    run_results['eLORETA'].append(metrics_eloreta)
+                    print(f"  eLORETA - MLE: {metrics_eloreta['mle']:.2f} mm, AUC: {metrics_eloreta['auc_mean']:.4f}")
         
-        # 6. 应用eLORETA方法
-        print("\n应用eLORETA方法...")
-        stc_eloreta, inv_op_eloreta = self.apply_mne_method(epochs, fwd, method='eLORETA')
-        if stc_eloreta is not None:
-            metrics_eloreta = self.evaluate_localization(stc_eloreta, gt_positions, fwd)
-            subject_results['eLORETA'] = {
-                'metrics': metrics_eloreta
-            }
-            if metrics_eloreta:
-                print(f"eLORETA - MLE: {metrics_eloreta['mle']:.2f} mm, AUC: {metrics_eloreta['auc_mean']:.4f}")
+        # 5. 计算每个方法的统计结果
+        subject_results = {}
+        
+        for method in ['MNE', 'eLORETA']:
+            if run_results[method]:
+                mle_values = [m['mle'] for m in run_results[method]]
+                auc_values = [m['auc_mean'] for m in run_results[method]]
+                
+                subject_results[method] = {
+                    'mle_mean': np.mean(mle_values),
+                    'mle_std': np.std(mle_values),
+                    'mle_min': np.min(mle_values),
+                    'mle_max': np.max(mle_values),
+                    'auc_mean': np.mean(auc_values),
+                    'auc_std': np.std(auc_values),
+                    'auc_min': np.min(auc_values),
+                    'auc_max': np.max(auc_values),
+                    'n_runs': len(run_results[method]),
+                    'all_runs': run_results[method]
+                }
+                
+                print(f"\n{method} 统计结果 (n={len(run_results[method])} runs):")
+                print(f"  MLE: {subject_results[method]['mle_mean']:.2f} ± {subject_results[method]['mle_std']:.2f} mm (最小: {subject_results[method]['mle_min']:.2f})")
+                print(f"  AUC: {subject_results[method]['auc_mean']:.4f} ± {subject_results[method]['auc_std']:.4f} (最大: {subject_results[method]['auc_max']:.4f})")
         
         # 保存被试结果
         self.save_subject_results(subject, subject_results, gt_positions, gt_names)
@@ -365,7 +405,7 @@ class TraditionalSourceLocalizer:
         return subject_results
     
     def save_subject_results(self, subject, results, gt_positions, gt_names):
-        """保存被试结果"""
+        """保存被试结果（包含所有run的统计信息）"""
         try:
             # 准备保存的数据
             save_data = {
@@ -376,15 +416,27 @@ class TraditionalSourceLocalizer:
             }
             
             for method, result in results.items():
-                if result['metrics']:
-                    save_data['methods'][method] = {
-                        'mle': result['metrics']['mle'],
-                        'auc_close': result['metrics']['auc_close'],
-                        'auc_far': result['metrics']['auc_far'],
-                        'auc_mean': result['metrics']['auc_mean'],
-                        'peak_time': result['metrics']['peak_time'],
-                        'max_activation': result['metrics']['max_activation']
-                    }
+                save_data['methods'][method] = {
+                    'n_runs': result['n_runs'],
+                    'mle_mean': result['mle_mean'],
+                    'mle_std': result['mle_std'],
+                    'mle_min': result['mle_min'],
+                    'mle_max': result['mle_max'],
+                    'auc_mean': result['auc_mean'],
+                    'auc_std': result['auc_std'],
+                    'auc_min': result['auc_min'],
+                    'auc_max': result['auc_max'],
+                    'all_runs_metrics': [
+                        {
+                            'mle': run['mle'],
+                            'auc_close': run['auc_close'],
+                            'auc_far': run['auc_far'],
+                            'auc_mean': run['auc_mean'],
+                            'peak_time': run['peak_time'],
+                            'max_activation': run['max_activation']
+                        } for run in result['all_runs']
+                    ]
+                }
             
             # 保存JSON文件
             json_path = self.results_dir / f"{subject}_results.json"
@@ -415,24 +467,23 @@ class TraditionalSourceLocalizer:
                 if subject_results:
                     all_results[subject] = subject_results
                     
-                    # 收集统计数据
+                    # 收集统计数据（使用每个被试的平均值）
                     for method in ['MNE', 'eLORETA']:
-                        if method in subject_results and subject_results[method]['metrics']:
-                            metrics = subject_results[method]['metrics']
-                            summary_stats[method]['mle'].append(metrics['mle'])
-                            summary_stats[method]['auc'].append(metrics['auc_mean'])
+                        if method in subject_results:
+                            summary_stats[method]['mle'].append(subject_results[method]['mle_mean'])
+                            summary_stats[method]['auc'].append(subject_results[method]['auc_mean'])
                 
             except Exception as e:
                 print(f"处理被试 {subject} 时出错: {e}")
                 continue
         
-        # 生成总结报告
-        self.generate_summary_report(summary_stats)
+        # 生成总结报告（包含每个被试的详细结果）
+        self.generate_summary_report(summary_stats, all_results)
         
         return all_results
     
-    def generate_summary_report(self, summary_stats):
-        """生成总结报告和汇总表格"""
+    def generate_summary_report(self, summary_stats, all_results):
+        """生成总结报告和汇总表格（包含每个被试的详细结果）"""
         try:
             report = {
                 'experiment_info': {
@@ -441,7 +492,8 @@ class TraditionalSourceLocalizer:
                     'methods': ['MNE', 'eLORETA'],
                     'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
                 },
-                'summary_statistics': {}
+                'summary_statistics': {},
+                'subject_details': {}
             }
             
             print(f"\n{'='*80}")
@@ -503,11 +555,23 @@ class TraditionalSourceLocalizer:
                         'AUC_Max': 0
                     })
             
-            # 打印汇总表格
+            # 打印整体汇总表格
             self.print_summary_table(table_data)
             
-            # 保存汇总表格为CSV
+            # 保存整体汇总表格为CSV
             self.save_summary_table(table_data)
+            
+            # 生成每个被试的详细结果表格
+            subject_detail_data = self.generate_subject_detail_table(all_results)
+            
+            # 将被试详细结果添加到报告中
+            report['subject_details'] = subject_detail_data
+            
+            # 打印每个被试的详细结果
+            self.print_subject_detail_table(subject_detail_data)
+            
+            # 保存每个被试的详细结果为CSV
+            self.save_subject_detail_table(subject_detail_data)
             
             # 保存总结报告
             report_path = self.results_dir / "summary_report.json"
@@ -567,6 +631,104 @@ class TraditionalSourceLocalizer:
         except Exception as e:
             print(f"保存汇总表格失败: {e}")
     
+    def generate_subject_detail_table(self, all_results):
+        """生成每个被试的详细结果表格数据（显示MLE均值、最小值，AUC均值、最大值）"""
+        detail_data = []
+        
+        for subject, subject_results in all_results.items():
+            row = {'Subject': subject}
+            
+            # 添加MNE方法的结果
+            if 'MNE' in subject_results:
+                row['MNE_Runs'] = subject_results['MNE']['n_runs']
+                row['MNE_MLE_Mean'] = subject_results['MNE']['mle_mean']
+                row['MNE_MLE_Min'] = subject_results['MNE']['mle_min']
+                row['MNE_AUC_Mean'] = subject_results['MNE']['auc_mean']
+                row['MNE_AUC_Max'] = subject_results['MNE']['auc_max']
+            else:
+                row['MNE_Runs'] = 0
+                row['MNE_MLE_Mean'] = None
+                row['MNE_MLE_Min'] = None
+                row['MNE_AUC_Mean'] = None
+                row['MNE_AUC_Max'] = None
+            
+            # 添加eLORETA方法的结果
+            if 'eLORETA' in subject_results:
+                row['eLORETA_Runs'] = subject_results['eLORETA']['n_runs']
+                row['eLORETA_MLE_Mean'] = subject_results['eLORETA']['mle_mean']
+                row['eLORETA_MLE_Min'] = subject_results['eLORETA']['mle_min']
+                row['eLORETA_AUC_Mean'] = subject_results['eLORETA']['auc_mean']
+                row['eLORETA_AUC_Max'] = subject_results['eLORETA']['auc_max']
+            else:
+                row['eLORETA_Runs'] = 0
+                row['eLORETA_MLE_Mean'] = None
+                row['eLORETA_MLE_Min'] = None
+                row['eLORETA_AUC_Mean'] = None
+                row['eLORETA_AUC_Max'] = None
+            
+            detail_data.append(row)
+        
+        return detail_data
+    
+    def print_subject_detail_table(self, detail_data):
+        """打印每个被试的详细结果表格（显示MLE均值、最小值，AUC均值、最大值）"""
+        print("\n" + "="*160)
+        print("每个被试的详细结果（跨所有run统计）")
+        print("="*160)
+        
+        # 表头
+        header = f"{'被试':<12} {'MNE_Runs':<10} {'MNE_MLE均值':<14} {'MNE_MLE最小':<14} {'MNE_AUC均值':<14} {'MNE_AUC最大':<14} {'eLOR_Runs':<10} {'eLOR_MLE均值':<14} {'eLOR_MLE最小':<14} {'eLOR_AUC均值':<14} {'eLOR_AUC最大':<14}"
+        print(header)
+        print("-" * 160)
+        
+        # 数据行
+        for row in detail_data:
+            mne_runs = row['MNE_Runs']
+            mne_mle_mean = f"{row['MNE_MLE_Mean']:.2f}" if row['MNE_MLE_Mean'] is not None else "N/A"
+            mne_mle_min = f"{row['MNE_MLE_Min']:.2f}" if row['MNE_MLE_Min'] is not None else "N/A"
+            mne_auc_mean = f"{row['MNE_AUC_Mean']:.4f}" if row['MNE_AUC_Mean'] is not None else "N/A"
+            mne_auc_max = f"{row['MNE_AUC_Max']:.4f}" if row['MNE_AUC_Max'] is not None else "N/A"
+            
+            eloreta_runs = row['eLORETA_Runs']
+            eloreta_mle_mean = f"{row['eLORETA_MLE_Mean']:.2f}" if row['eLORETA_MLE_Mean'] is not None else "N/A"
+            eloreta_mle_min = f"{row['eLORETA_MLE_Min']:.2f}" if row['eLORETA_MLE_Min'] is not None else "N/A"
+            eloreta_auc_mean = f"{row['eLORETA_AUC_Mean']:.4f}" if row['eLORETA_AUC_Mean'] is not None else "N/A"
+            eloreta_auc_max = f"{row['eLORETA_AUC_Max']:.4f}" if row['eLORETA_AUC_Max'] is not None else "N/A"
+            
+            line = f"{row['Subject']:<12} {mne_runs:<10} {mne_mle_mean:<14} {mne_mle_min:<14} {mne_auc_mean:<14} {mne_auc_max:<14} {eloreta_runs:<10} {eloreta_mle_mean:<14} {eloreta_mle_min:<14} {eloreta_auc_mean:<14} {eloreta_auc_max:<14}"
+            print(line)
+        
+        print("="*160)
+        print("注：MLE单位为毫米(mm)，显示各被试跨所有run的统计结果")
+        print("="*160)
+    
+    def save_subject_detail_table(self, detail_data):
+        """保存每个被试的详细结果为CSV文件（包含MLE均值、最小值，AUC均值、最大值）"""
+        try:
+            import pandas as pd
+            
+            # 创建DataFrame
+            df = pd.DataFrame(detail_data)
+            
+            # 重命名列名为中文
+            df.columns = ['被试', 'MNE_Run数', 'MNE_MLE均值(mm)', 'MNE_MLE最小值(mm)', 'MNE_AUC均值', 'MNE_AUC最大值',
+                         'eLORETA_Run数', 'eLORETA_MLE均值(mm)', 'eLORETA_MLE最小值(mm)', 'eLORETA_AUC均值', 'eLORETA_AUC最大值']
+            
+            # 保存为CSV
+            csv_path = self.results_dir / "subject_details.csv"
+            df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+            print(f"每个被试的详细结果已保存: {csv_path}")
+            
+            # 保存为Excel（如果可能）
+            try:
+                excel_path = self.results_dir / "subject_details.xlsx"
+                df.to_excel(excel_path, index=False)
+                print(f"每个被试的详细结果已保存: {excel_path}")
+            except ImportError:
+                print("未安装openpyxl，跳过Excel文件保存")
+            
+        except Exception as e:
+            print(f"保存每个被试详细结果失败: {e}")
 
 
 def main():

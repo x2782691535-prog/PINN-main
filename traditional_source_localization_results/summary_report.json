@@ -14,22 +14,123 @@
       "MNE",
       "eLORETA"
     ],
-    "timestamp": "2025-10-14 16:10:27"
+    "timestamp": "2025-10-19 09:36:23"
   },
   "summary_statistics": {
     "MNE": {
-      "mean_localization_error_mm": 31.420712731054305,
-      "std_localization_error_mm": 16.805168576032365,
-      "min_localization_error_mm": 17.0332161967535,
-      "max_localization_error_mm": 58.232759450931326,
-      "n_subjects": 6
+      "mean_mle_mm": 65.53992483211506,
+      "std_mle_mm": 13.655385758009013,
+      "min_mle_mm": 39.17500203608899,
+      "max_mle_mm": 81.79390247508799,
+      "mean_auc": 0.5862399568143488,
+      "std_auc": 0.14751656234515823,
+      "min_auc": 0.37931665649786456,
+      "max_auc": 0.8029286150091519,
+      "n_subjects": 7
     },
     "eLORETA": {
-      "mean_localization_error_mm": 23.961668592688934,
-      "std_localization_error_mm": 12.666312732105103,
-      "min_localization_error_mm": 8.328479455598245,
-      "max_localization_error_mm": 40.30253954833145,
+      "mean_mle_mm": 61.28071671450088,
+      "std_mle_mm": 14.354785358200598,
+      "min_mle_mm": 43.278203115456115,
+      "max_mle_mm": 82.00691359103608,
+      "mean_auc": 0.4970765039796679,
+      "std_auc": 0.10161092282179496,
+      "min_auc": 0.3722217379935501,
+      "max_auc": 0.601464307504576,
       "n_subjects": 7
     }
-  }
+  },
+  "subject_details": [
+    {
+      "Subject": "sub-01",
+      "MNE_Runs": 11,
+      "MNE_MLE_Mean": 61.146317252896374,
+      "MNE_MLE_Min": 13.622488484418023,
+      "MNE_AUC_Mean": 0.6790615120084309,
+      "MNE_AUC_Max": 0.9804758999389872,
+      "eLORETA_Runs": 11,
+      "eLORETA_MLE_Mean": 58.164569367369886,
+      "eLORETA_MLE_Min": 13.308462873863563,
+      "eLORETA_AUC_Mean": 0.601464307504576,
+      "eLORETA_AUC_Max": 0.9724222086638195
+    },
+    {
+      "Subject": "sub-02",
+      "MNE_Runs": 6,
+      "MNE_MLE_Mean": 71.78815270575363,
+      "MNE_MLE_Min": 68.96603782418963,
+      "MNE_AUC_Mean": 0.37931665649786456,
+      "MNE_AUC_Max": 0.6180597925564368,
+      "eLORETA_Runs": 6,
+      "eLORETA_MLE_Mean": 43.278203115456115,
+      "eLORETA_MLE_Min": 22.677545863469692,
+      "eLORETA_AUC_Mean": 0.38887533048606876,
+      "eLORETA_AUC_Max": 0.637339841366687
+    },
+    {
+      "Subject": "sub-03",
+      "MNE_Runs": 7,
+      "MNE_MLE_Mean": 39.17500203608899,
+      "MNE_MLE_Min": 29.82273169242557,
+      "MNE_AUC_Mean": 0.8029286150091519,
+      "MNE_AUC_Max": 0.9803538743136059,
+      "eLORETA_Runs": 7,
+      "eLORETA_MLE_Mean": 52.65444871038579,
+      "eLORETA_MLE_Min": 39.52203245756122,
+      "eLORETA_AUC_Mean": 0.5541357970888173,
+      "eLORETA_AUC_Max": 0.9586333129957291
+    },
+    {
+      "Subject": "sub-04",
+      "MNE_Runs": 9,
+      "MNE_MLE_Mean": 56.589229003153605,
+      "MNE_MLE_Min": 28.788376603165005,
+      "MNE_AUC_Mean": 0.5525184733238424,
+      "MNE_AUC_Max": 0.8907870652837095,
+      "eLORETA_Runs": 9,
+      "eLORETA_MLE_Mean": 44.89920999949208,
+      "eLORETA_MLE_Min": 23.483196962730247,
+      "eLORETA_AUC_Mean": 0.6009626466002306,
+      "eLORETA_AUC_Max": 0.8707748627211714
+    },
+    {
+      "Subject": "sub-05",
+      "MNE_Runs": 14,
+      "MNE_MLE_Mean": 81.79390247508799,
+      "MNE_MLE_Min": 22.1217904020877,
+      "MNE_AUC_Mean": 0.7480780964002441,
+      "MNE_AUC_Max": 0.9976815131177548,
+      "eLORETA_Runs": 14,
+      "eLORETA_MLE_Mean": 76.59718895459469,
+      "eLORETA_MLE_Min": 36.708273073073784,
+      "eLORETA_AUC_Mean": 0.3722217379935501,
+      "eLORETA_AUC_Max": 0.6967663209273948
+    },
+    {
+      "Subject": "sub-06",
+      "MNE_Runs": 7,
+      "MNE_MLE_Mean": 68.68971613629174,
+      "MNE_MLE_Min": 37.20587044465115,
+      "MNE_AUC_Mean": 0.47067026932798744,
+      "MNE_AUC_Max": 0.8004881025015254,
+      "eLORETA_Runs": 7,
+      "eLORETA_MLE_Mean": 71.36448326317151,
+      "eLORETA_MLE_Min": 37.76921800249996,
+      "eLORETA_AUC_Mean": 0.38216682646212846,
+      "eLORETA_AUC_Max": 0.7679072605247101
+    },
+    {
+      "Subject": "sub-07",
+      "MNE_Runs": 7,
+      "MNE_MLE_Mean": 79.59715421553312,
+      "MNE_MLE_Min": 25.399807274746124,
+      "MNE_AUC_Mean": 0.47110607513292085,
+      "MNE_AUC_Max": 0.9945088468578401,
+      "eLORETA_Runs": 7,
+      "eLORETA_MLE_Mean": 82.00691359103608,
+      "eLORETA_MLE_Min": 38.17017895141782,
+      "eLORETA_AUC_Mean": 0.5797088817223044,
+      "eLORETA_AUC_Max": 0.9586333129957291
+    }
+  ]
 }
