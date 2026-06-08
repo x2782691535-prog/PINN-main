@@ -204,7 +204,7 @@ plot_params = dict(surface='inflated', cortex="low_contrast", hemi='both', verbo
 print("加载BCI-IV-2a运动想象EEG数据集...")
 
 # BCI-IV-2a数据路径
-bci_data_path = r"E:/pycharm/PINN/cursor-gPINN/BCI2a"
+bci_data_path = r"E:/pycharm/PINN/PINN/data/BCI2a"
 
 # 加载数据
 epochs_list = load_bci_iv_2a_data(bci_data_path)

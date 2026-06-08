@@ -26,6 +26,11 @@ from pathlib import Path
 import pandas as pd
 from scipy.spatial.distance import cdist
 import contextlib
+import matplotlib.pyplot as plt
+
+# 设置matplotlib字体为微软黑体，解决中文显示问题
+plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']
+plt.rcParams['axes.unicode_minus'] = False
 
 # 添加esinet路径
 sys.path.append(os.path.join(os.path.dirname(__file__), 'esinet'))
@@ -51,6 +56,193 @@ def suppress_stdout():
         finally:
             sys.stdout = old_stdout
 
+# ============ 可视化辅助函数 ============
+
+def save_brain_screenshot(brain, filename):
+    """保存3D脑图截图"""
+    try:
+        img = brain.screenshot()
+        plt.imsave(filename, img)
+        print(f"  已保存3D脑图截图: {filename}")
+        return True
+    except Exception as e:
+        print(f"  保存截图失败: {e}")
+        return False
+
+def plot_stc_multiple_views(stc, subject, subjects_dir, method_name, output_dir, 
+                           views=['lateral', 'medial', 'dorsal', 'ventral'], 
+                           base_params=None):
+    """
+    绘制源定位结果的多个视角并保存为单独的图片
+    
+    Parameters
+    ----------
+    stc : mne.SourceEstimate
+        源定位结果
+    subject : str
+        被试名称
+    subjects_dir : str
+        FreeSurfer subjects目录
+    method_name : str
+        方法名称（MNE或eLORETA）
+    output_dir : Path
+        输出目录
+    views : list
+        要绘制的视角列表
+    base_params : dict
+        基础绘图参数
+    """
+    if base_params is None:
+        base_params = dict(
+            surface='inflated', 
+            cortex='low_contrast', 
+            background='white', 
+            foreground='black',
+            size=(800, 600),
+            time_viewer=False,
+            colorbar=True,
+            verbose=0
+        )
+    
+    saved_files = []
+    for view in views:
+        try:
+            brain = stc.plot(
+                subject=subject,
+                subjects_dir=subjects_dir,
+                hemi='both',
+                views=view,
+                **base_params
+            )
+            
+            filename = output_dir / f"{method_name}_{view}.png"
+            if save_brain_screenshot(brain, str(filename)):
+                saved_files.append(filename)
+            
+            brain.close()
+        except Exception as e:
+            print(f"  绘制 {view} 视角失败: {e}")
+            continue
+    
+    return saved_files
+
+def plot_stc_grid_views(stc, subject, subjects_dir, grid_layout, method_name, 
+                       output_filename, base_params=None, figsize_per_subplot=(4, 4), 
+                       title=None):
+    """
+    将源定位结果的多个视角组合到一个网格图中
+    
+    Parameters
+    ----------
+    stc : mne.SourceEstimate
+        源定位结果
+    subject : str
+        被试名称
+    subjects_dir : str
+        FreeSurfer subjects目录
+    grid_layout : list of lists of dict
+        网格布局配置
+    method_name : str
+        方法名称
+    output_filename : str or Path
+        输出文件名
+    base_params : dict
+        基础绘图参数
+    figsize_per_subplot : tuple
+        每个子图的大小
+    title : str
+        图的标题
+    """
+    if base_params is None:
+        base_params = dict(
+            surface='inflated', 
+            cortex='low_contrast', 
+            size=(300, 300),
+            background='white', 
+            foreground='black', 
+            time_viewer=False,
+            show_traces=False, 
+            colorbar=False,
+            verbose=0
+        )
+    
+    try:
+        n_rows = len(grid_layout)
+        n_cols = max(len(row) for row in grid_layout) if n_rows > 0 else 0
+        
+        if n_rows == 0 or n_cols == 0:
+            print(f"  错误: grid_layout 不能为空")
+            return False
+        
+        total_width = n_cols * figsize_per_subplot[0]
+        total_height = n_rows * figsize_per_subplot[1]
+        
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(total_width, total_height), squeeze=False)
+        
+        # 遍历每个子图，分别渲染不同视角
+        for r_idx, row_config in enumerate(grid_layout):
+            for c_idx, view_config in enumerate(row_config):
+                ax = axes[r_idx, c_idx]
+                if view_config is None or c_idx >= len(row_config):
+                    ax.axis('off')
+                    continue
+                
+                # 合并基础参数和当前子图参数
+                current_plot_params = base_params.copy()
+                hemi = view_config.get('hemi', 'both')
+                view = view_config.get('view', None)
+                current_plot_params['hemi'] = hemi
+                
+                # 创建Brain对象
+                brain = stc.plot(
+                    subject=subject,
+                    subjects_dir=subjects_dir, 
+                    **current_plot_params
+                )
+                
+                # 切换到指定视角
+                if view is not None:
+                    brain.show_view(view)
+                
+                # 截图
+                img = brain.screenshot()
+                brain.close()
+                
+                # 绘制到matplotlib子图
+                ax.imshow(img)
+                ax.axis('off')
+                
+                # 添加视角标签
+                view_label = f"{view} ({hemi})" if view else f"({hemi})"
+                ax.set_title(view_label, fontsize=10)
+            
+            # 关闭剩余的axes
+            for c_idx_remaining in range(len(row_config), n_cols):
+                axes[r_idx, c_idx_remaining].axis('off')
+        
+        if title:
+            fig.suptitle(title, fontsize=16, fontweight='bold')
+            fig.tight_layout(rect=[0, 0, 1, 0.96])
+        else:
+            fig.tight_layout()
+        
+        # 确保输出目录存在
+        output_dir = os.path.dirname(output_filename)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+        
+        plt.savefig(output_filename, dpi=300, bbox_inches='tight')
+        print(f"  组合视图已保存至: {output_filename}")
+        plt.close(fig)
+        
+        return True
+        
+    except Exception as e:
+        print(f"  生成组合视图失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 # 数据集路径
 DATASET_PATH = r"E:\pycharm\PINN\PINN-main\源定位真实数据集"
 
@@ -69,6 +261,10 @@ class TraditionalSourceLocalizer:
         # 创建结果保存目录
         self.results_dir = Path("traditional_source_localization_results")
         self.results_dir.mkdir(exist_ok=True)
+        
+        # 创建可视化保存目录
+        self.viz_dir = self.results_dir / "visualizations"
+        self.viz_dir.mkdir(exist_ok=True)
         
     def load_forward_model(self, subject):
         """加载前向模型"""
@@ -262,7 +458,254 @@ class TraditionalSourceLocalizer:
         except Exception as e:
             print(f"提取源空间位置失败: {e}")
             return None
+    
+    def get_subjects_dir_and_subject(self, subject):
+        """
+        获取被试的FreeSurfer subjects目录和被试名称
+        
+        Parameters
+        ----------
+        subject : str
+            被试ID（例如 'sub-01'）
+        
+        Returns
+        -------
+        subjects_dir : str or None
+            FreeSurfer subjects目录路径
+        subject_name : str or None
+            FreeSurfer被试名称
+        """
+        try:
+            # 数据集中的被试解剖数据应该在sourcemodelling目录下
+            # 检查anat目录（真实数据集使用GIFTI格式）
+            anat_dir = self.dataset_path / "derivatives" / "sourcemodelling" / subject / "anat"
+            
+            if anat_dir.exists():
+                # subjects_dir应该是sourcemodelling目录
+                subjects_dir = str(self.dataset_path / "derivatives" / "sourcemodelling")
+                # 被试名称就是subject本身
+                subject_name = subject
+                
+                # 检查是否有必要的表面文件
+                pial_files = list(anat_dir.glob("*_pial.surf.gii"))
+                inflated_files = list(anat_dir.glob("*_inflated.surf.gii"))
+                
+                if len(pial_files) >= 2 and len(inflated_files) >= 2:
+                    print(f"  找到被试表面文件: {len(pial_files)} pial, {len(inflated_files)} inflated")
+                else:
+                    print(f"  警告: {subject} 表面文件不完整")
+                
+                return subjects_dir, subject_name
+            else:
+                print(f"  警告: 未找到 {subject} 的anat目录")
+                return None, None
+                
+        except Exception as e:
+            print(f"  获取subjects_dir失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, None
 
+    def visualize_source_localization(self, stc, subject_name, subjects_dir, 
+                                     method_name, output_dir, run_num):
+        """
+        为单个run的源定位结果生成3D脑图可视化
+        
+        Parameters
+        ----------
+        stc : mne.SourceEstimate
+            源定位结果
+        subject_name : str
+            FreeSurfer被试名称
+        subjects_dir : str
+            FreeSurfer subjects目录
+        method_name : str
+            方法名称（MNE或eLORETA）
+        output_dir : Path
+            输出目录
+        run_num : int
+            run编号
+        """
+        try:
+            # 创建run专属目录
+            run_dir = output_dir / f"run-{run_num:02d}"
+            run_dir.mkdir(exist_ok=True)
+            
+            # 1. 生成单个视角的3D脑图（峰值时间）
+            print(f"    - 生成峰值时刻的3D脑图...")
+            peak_vertex, peak_time_idx = stc.get_peak(
+                hemi=None, tmin=None, tmax=None, 
+                mode='abs', vert_as_index=True, time_as_index=True
+            )
+            peak_time = stc.times[peak_time_idx]
+            
+            # 绘制脑表面图
+            try:
+                brain = stc.plot(
+                    subject=subject_name,
+                    subjects_dir=subjects_dir,
+                    hemi='both',
+                    surface='inflated',
+                    cortex='low_contrast',
+                    background='white',
+                    foreground='black',
+                    initial_time=peak_time,
+                    time_viewer=False,
+                    colorbar=True,
+                    size=(800, 600),
+                    verbose=0
+                )
+                
+                filename = run_dir / f"{method_name}_brain_surface.png"
+                save_brain_screenshot(brain, str(filename))
+                brain.close()
+            except Exception as e:
+                print(f"    警告: 生成脑表面图失败: {e}")
+            
+            # 2. 生成多视角组合图
+            print(f"    - 生成多视角组合图...")
+            grid_layout = [
+                [
+                    {'view': 'lateral', 'hemi': 'lh'}, 
+                    {'view': 'dorsal', 'hemi': 'both'}, 
+                    {'view': 'lateral', 'hemi': 'rh'}
+                ],
+                [
+                    {'view': 'medial', 'hemi': 'lh'}, 
+                    {'view': 'ventral', 'hemi': 'both'}, 
+                    {'view': 'medial', 'hemi': 'rh'}
+                ]
+            ]
+            
+            output_filename = run_dir / f"{method_name}_multi_views.png"
+            plot_stc_grid_views(
+                stc=stc,
+                subject=subject_name,
+                subjects_dir=subjects_dir,
+                grid_layout=grid_layout,
+                method_name=method_name,
+                output_filename=str(output_filename),
+                figsize_per_subplot=(3.5, 3.5),
+                title=f"{method_name} 源定位结果 - Run {run_num:02d} (峰值时刻: {peak_time:.3f}s)"
+            )
+            
+            print(f"    ✓ {method_name} 可视化完成")
+            
+        except Exception as e:
+            print(f"    ✗ 可视化失败: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def visualize_methods_comparison(self, stc_mne, stc_eloreta, subject_name, 
+                                    subjects_dir, output_dir, run_num):
+        """
+        生成MNE和eLORETA方法的对比可视化
+        
+        Parameters
+        ----------
+        stc_mne : mne.SourceEstimate
+            MNE方法的源定位结果
+        stc_eloreta : mne.SourceEstimate
+            eLORETA方法的源定位结果
+        subject_name : str
+            FreeSurfer被试名称
+        subjects_dir : str
+            FreeSurfer subjects目录
+        output_dir : Path
+            输出目录
+        run_num : int
+            run编号
+        """
+        try:
+            run_dir = output_dir / f"run-{run_num:02d}"
+            run_dir.mkdir(exist_ok=True)
+            
+            print(f"    - 生成方法对比图...")
+            
+            # 创建对比图布局
+            fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+            
+            # 定义视角
+            views = ['lateral', 'dorsal', 'medial']
+            methods = [
+                ('MNE', stc_mne),
+                ('eLORETA', stc_eloreta)
+            ]
+            
+            base_params = dict(
+                surface='inflated',
+                cortex='low_contrast',
+                size=(300, 300),
+                background='white',
+                foreground='black',
+                time_viewer=False,
+                colorbar=False,
+                verbose=0
+            )
+            
+            for row_idx, (method_name, stc) in enumerate(methods):
+                # 获取峰值时间
+                _, peak_time_idx = stc.get_peak(
+                    hemi=None, tmin=None, tmax=None,
+                    mode='abs', vert_as_index=True, time_as_index=True
+                )
+                peak_time = stc.times[peak_time_idx]
+                
+                for col_idx, view in enumerate(views):
+                    ax = axes[row_idx, col_idx]
+                    
+                    try:
+                        # 创建brain对象
+                        brain = stc.plot(
+                            subject=subject_name,
+                            subjects_dir=subjects_dir,
+                            hemi='both',
+                            initial_time=peak_time,
+                            **base_params
+                        )
+                        
+                        # 切换视角
+                        brain.show_view(view)
+                        
+                        # 截图
+                        img = brain.screenshot()
+                        brain.close()
+                        
+                        # 显示
+                        ax.imshow(img)
+                        ax.axis('off')
+                        
+                        # 添加标题
+                        if row_idx == 0:
+                            ax.set_title(f'{view.capitalize()} View', fontsize=12, fontweight='bold')
+                        
+                        # 添加方法标签
+                        if col_idx == 0:
+                            ax.text(-0.1, 0.5, method_name, 
+                                   transform=ax.transAxes,
+                                   fontsize=14, fontweight='bold',
+                                   rotation=90, va='center')
+                    except Exception as e:
+                        print(f"    警告: 生成{method_name} {view}视角失败: {e}")
+                        ax.axis('off')
+                        ax.text(0.5, 0.5, f'Error:\n{view}', 
+                               ha='center', va='center', transform=ax.transAxes)
+            
+            plt.suptitle(f'MNE vs eLORETA 源定位对比 - Run {run_num:02d}', 
+                        fontsize=16, fontweight='bold')
+            plt.tight_layout(rect=[0, 0, 1, 0.96])
+            
+            output_filename = run_dir / "methods_comparison.png"
+            plt.savefig(output_filename, dpi=300, bbox_inches='tight')
+            plt.close(fig)
+            
+            print(f"    ✓ 对比图已保存: {output_filename}")
+            
+        except Exception as e:
+            print(f"    ✗ 生成对比图失败: {e}")
+            import traceback
+            traceback.print_exc()
+    
     def evaluate_localization(self, stc, ground_truth_positions, fwd):
         """评估源定位结果 - 计算MLE和AUC"""
         try:
@@ -332,17 +775,31 @@ class TraditionalSourceLocalizer:
         if fwd is None:
             return None
         
-        # 2. 加载所有run的EEG数据
+        # 2. 获取被试的FreeSurfer subjects目录
+        subjects_dir, subject_name = self.get_subjects_dir_and_subject(subject)
+        if subjects_dir is None:
+            print(f"  警告: 无法获取 {subject} 的subjects_dir，将跳过3D可视化")
+        else:
+            print(f"  subjects_dir: {subjects_dir}")
+            print(f"  subject_name: {subject_name}")
+            # 设置MNE的subjects_dir环境变量
+            mne.set_config('SUBJECTS_DIR', subjects_dir)
+        
+        # 3. 创建被试专属的可视化目录
+        subject_viz_dir = self.viz_dir / subject
+        subject_viz_dir.mkdir(exist_ok=True)
+        
+        # 4. 加载所有run的EEG数据
         all_runs_data = self.load_all_eeg_runs(subject)
         if all_runs_data is None:
             return None
         
-        # 3. 加载ground truth位置
+        # 5. 加载ground truth位置
         gt_positions, gt_names = self.load_ground_truth_positions(subject)
         if gt_positions is None:
             return None
         
-        # 4. 对每个run进行处理，收集结果
+        # 6. 对每个run进行处理，收集结果
         run_results = {'MNE': [], 'eLORETA': []}
         
         for run_data in all_runs_data:
@@ -365,6 +822,14 @@ class TraditionalSourceLocalizer:
                 if metrics_mne:
                     run_results['MNE'].append(metrics_mne)
                     print(f"  MNE - MLE: {metrics_mne['mle']:.2f} mm, AUC: {metrics_mne['auc_mean']:.4f}")
+                
+                # 可视化MNE结果
+                if subjects_dir is not None:
+                    print(f"  正在生成 MNE 的3D脑图可视化...")
+                    self.visualize_source_localization(
+                        stc_mne, subject_name, subjects_dir, 'MNE', 
+                        subject_viz_dir, run_num
+                    )
             
             # 应用eLORETA方法
             stc_eloreta, inv_op_eloreta = self.apply_mne_method(epochs, fwd, method='eLORETA')
@@ -373,6 +838,22 @@ class TraditionalSourceLocalizer:
                 if metrics_eloreta:
                     run_results['eLORETA'].append(metrics_eloreta)
                     print(f"  eLORETA - MLE: {metrics_eloreta['mle']:.2f} mm, AUC: {metrics_eloreta['auc_mean']:.4f}")
+                
+                # 可视化eLORETA结果
+                if subjects_dir is not None:
+                    print(f"  正在生成 eLORETA 的3D脑图可视化...")
+                    self.visualize_source_localization(
+                        stc_eloreta, subject_name, subjects_dir, 'eLORETA', 
+                        subject_viz_dir, run_num
+                    )
+            
+            # 如果两个方法都成功，生成对比图
+            if stc_mne is not None and stc_eloreta is not None and subjects_dir is not None:
+                print(f"  正在生成 MNE vs eLORETA 对比可视化...")
+                self.visualize_methods_comparison(
+                    stc_mne, stc_eloreta, subject_name, subjects_dir,
+                    subject_viz_dir, run_num
+                )
         
         # 5. 计算每个方法的统计结果
         subject_results = {}
@@ -735,16 +1216,38 @@ def main():
     """主函数"""
     print("传统源定位方法对比实验")
     print("支持方法: MNE, eLORETA")
+    print("=" * 60)
     
     # 创建源定位器
     localizer = TraditionalSourceLocalizer()
     
-    # 运行所有被试的分析
-    results = localizer.run_all_subjects()
+    # 只处理sub-01作为示例（包含3D脑图可视化）
+    print("\n>>> 只处理 sub-01 作为3D脑图可视化示例 <<<\n")
     
-    print(f"\n实验完成！结果保存在: {localizer.results_dir}")
+    subject = 'sub-01'
+    try:
+        result = localizer.process_subject(subject)
+        if result:
+            print(f"\n✓ {subject} 处理完成")
+            print(f"  - MNE 结果: MLE={result['MNE']['mle_mean']:.2f}±{result['MNE']['mle_std']:.2f} mm, AUC={result['MNE']['auc_mean']:.4f}")
+            print(f"  - eLORETA 结果: MLE={result['eLORETA']['mle_mean']:.2f}±{result['eLORETA']['mle_std']:.2f} mm, AUC={result['eLORETA']['auc_mean']:.4f}")
+        else:
+            print(f"\n✗ {subject} 处理失败")
+    except Exception as e:
+        print(f"\n✗ 处理 {subject} 时出错: {e}")
+        import traceback
+        traceback.print_exc()
     
-    return results
+    print("\n" + "=" * 60)
+    print(f"实验完成！")
+    print(f"结果保存在: {localizer.results_dir}")
+    print(f"可视化保存在: {localizer.viz_dir / subject}")
+    print("=" * 60)
+    
+    # 如果需要处理所有被试，取消下面的注释
+    # print("\n如需处理所有被试，请调用: localizer.run_all_subjects()")
+    
+    return {subject: result} if result else None
 
 
 if __name__ == "__main__":
